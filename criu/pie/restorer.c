@@ -548,6 +548,37 @@ static int restore_rseq(struct rst_rseq_param *rseq)
 	return 0;
 }
 
+/* Hands a restored filter's listener to the --seccomp-notify-socket supervisor. */
+static int send_seccomp_listener(int sk, int listener, pid_t tid)
+{
+	char cmsg[CMSG_SPACE(sizeof(int))] = {};
+	struct msghdr h = {};
+	struct cmsghdr *ch;
+	struct iovec iov;
+	int32_t payload = tid;
+	int ret;
+
+	iov.iov_base = &payload;
+	iov.iov_len = sizeof(payload);
+	h.msg_iov = &iov;
+	h.msg_iovlen = 1;
+	h.msg_control = cmsg;
+	h.msg_controllen = sizeof(cmsg);
+
+	ch = CMSG_FIRSTHDR(&h);
+	ch->cmsg_len = CMSG_LEN(sizeof(int));
+	ch->cmsg_level = SOL_SOCKET;
+	ch->cmsg_type = SCM_RIGHTS;
+	*(int *)CMSG_DATA(ch) = listener;
+
+	ret = sys_sendmsg(sk, &h, 0);
+	if (ret < 0) {
+		pr_err("seccomp: Unable to send listener of tid %d: %d\n", tid, ret);
+		return -1;
+	}
+	return 0;
+}
+
 static int restore_seccomp_filter(pid_t tid, struct thread_restore_args *args)
 {
 	unsigned int flags = args->seccomp_force_tsync ? SECCOMP_FILTER_FLAG_TSYNC : 0;
@@ -556,11 +587,28 @@ static int restore_seccomp_filter(pid_t tid, struct thread_restore_args *args)
 
 	for (i = 0; i < args->seccomp_filters_n; i++) {
 		struct thread_seccomp_filter *filter = &args->seccomp_filters[i];
+		unsigned int fflags = filter->flags | flags;
+
+		/* The kernel refuses TSYNC with a listener unless TSYNC_ESRCH is set. */
+		if ((fflags & SECCOMP_FILTER_FLAG_NEW_LISTENER) && (fflags & SECCOMP_FILTER_FLAG_TSYNC))
+			fflags |= SECCOMP_FILTER_FLAG_TSYNC_ESRCH;
 
 		pr_debug("seccomp: Restoring mode %d flags %x on tid %d filter %d\n", SECCOMP_SET_MODE_FILTER,
-			 (filter->flags | flags), tid, (int)i);
+			 fflags, tid, (int)i);
 
-		ret = sys_seccomp(SECCOMP_SET_MODE_FILTER, filter->flags | flags, (void *)&filter->sock_fprog);
+		ret = sys_seccomp(SECCOMP_SET_MODE_FILTER, fflags, (void *)&filter->sock_fprog);
+		if (ret >= 0 && (fflags & SECCOMP_FILTER_FLAG_NEW_LISTENER)) {
+			int err = send_seccomp_listener(args->seccomp_notify_sk, ret, tid);
+
+			sys_close(ret);
+			if (err)
+				return -1;
+			continue;
+		}
+		if (ret < 0 && (fflags & SECCOMP_FILTER_FLAG_NEW_LISTENER)) {
+			pr_err("seccomp: SECCOMP_SET_MODE_FILTER with listener returned %d on tid %d\n", ret, tid);
+			return -1;
+		}
 		if (ret < 0) {
 			if (ret == -ENOSYS) {
 				pr_debug("seccomp: sys_seccomp is not supported in kernel, "
@@ -621,6 +669,11 @@ static int restore_seccomp(struct thread_restore_args *args)
 		pr_err("seccomp: Unknown seccomp mode %d on tid %d\n", args->seccomp_mode, tid);
 		ret = -1;
 		break;
+	}
+
+	if (args->seccomp_notify_sk >= 0) {
+		sys_close(args->seccomp_notify_sk);
+		args->seccomp_notify_sk = -1;
 	}
 
 	if (!ret) {

@@ -718,6 +718,9 @@ static int setup_opts_from_req(int sk, CriuOpts *req)
 	if (req->cgroup_yard)
 		SET_CHAR_OPTS(cgroup_yard, req->cgroup_yard);
 
+	if (req->seccomp_notify_socket)
+		SET_CHAR_OPTS(seccomp_notify_socket, req->seccomp_notify_socket);
+
 	if (req->tls_cacert)
 		SET_CHAR_OPTS(tls_cacert, req->tls_cacert);
 	if (req->tls_cacrl)

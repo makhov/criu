@@ -27,6 +27,22 @@
 #define SECCOMP_FILTER_FLAG_TSYNC 1
 #endif
 
+#ifndef SECCOMP_FILTER_FLAG_NEW_LISTENER
+#define SECCOMP_FILTER_FLAG_NEW_LISTENER (1UL << 3)
+#endif
+
+#ifndef SECCOMP_FILTER_FLAG_TSYNC_ESRCH
+#define SECCOMP_FILTER_FLAG_TSYNC_ESRCH (1UL << 4)
+#endif
+
+#ifndef SECCOMP_RET_USER_NOTIF
+#define SECCOMP_RET_USER_NOTIF 0x7fc00000U
+#endif
+
+#ifndef SECCOMP_RET_ACTION_FULL
+#define SECCOMP_RET_ACTION_FULL 0xffff0000U
+#endif
+
 struct thread_restore_args;
 struct task_restore_args;
 struct pstree_item;
@@ -70,5 +86,7 @@ extern int seccomp_collect_dump_filters(void);
 extern int seccomp_read_image(void);
 extern int seccomp_prepare_threads(struct pstree_item *item, struct task_restore_args *ta);
 extern void seccomp_rst_reloc(struct thread_restore_args *thread_arg);
+extern int prepare_seccomp_notify_socket(void);
+extern int seccomp_notify_sk_get(void);
 
 #endif

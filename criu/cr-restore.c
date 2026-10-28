@@ -2526,6 +2526,9 @@ int cr_restore_tasks(void)
 	if (prepare_lazy_pages_socket() < 0)
 		goto clean_cgroup;
 
+	if (prepare_seccomp_notify_socket() < 0)
+		goto clean_cgroup;
+
 	ret = restore_root_task(root_item);
 clean_cgroup:
 	fini_cgroup();
@@ -3576,6 +3579,11 @@ static int sigreturn_restore(pid_t pid, struct task_restore_args *task_args, uns
 
 		seccomp_rst_reloc(&thread_args[i]);
 		thread_args[i].seccomp_force_tsync = rsti(current)->has_old_seccomp_filter;
+		if (thread_args[i].seccomp_notify) {
+			thread_args[i].seccomp_notify_sk = seccomp_notify_sk_get();
+			if (thread_args[i].seccomp_notify_sk < 0)
+				goto err;
+		}
 
 		thread_args[i].mz = mz + i;
 		sigframe = (struct rt_sigframe *)&mz[i].rt_sigframe;
