@@ -191,6 +191,8 @@ struct cr_options {
 	struct list_head new_cgroup_roots;
 	char *cgroup_yard;
 	char *seccomp_notify_socket;
+	/* Landlock filesystem rights to confine restored tasks to their root. */
+	uint64_t landlock_fs;
 	bool autodetect_ext_mounts;
 	int enable_external_sharing;
 	int enable_external_masters;

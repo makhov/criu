@@ -579,6 +579,61 @@ static int send_seccomp_listener(int sk, int listener, pid_t tid)
 	return 0;
 }
 
+#ifndef LANDLOCK_RULE_PATH_BENEATH
+#define LANDLOCK_RULE_PATH_BENEATH 1
+#endif
+
+/*
+ * Confines the calling thread to its root directory with Landlock
+ * (--landlock-fs). The kernel cannot report a task's Landlock domain, so a
+ * runtime that confined its container asks for it again here. proc_fd,
+ * criu's /proc, stays reachable for the rest of the restore. Runs before
+ * the creds are restored, while the thread has CAP_SYS_ADMIN, which
+ * Landlock asks for in place of no_new_privs.
+ */
+static int restore_landlock(u64 handled, int proc_fd)
+{
+	struct {
+		u64 access_fs;
+		u64 access_net;
+		u64 scoped;
+	} attr = { .access_fs = handled };
+	struct {
+		u64 allowed_access;
+		s32 parent_fd;
+	} __attribute__((packed)) rule = { .allowed_access = handled };
+	int root, ruleset;
+	long ret;
+
+	if (!handled)
+		return 0;
+
+	root = sys_open("/", O_PATH | O_DIRECTORY | O_CLOEXEC, 0);
+	if (root < 0) {
+		pr_err("landlock: open /: %d\n", root);
+		return -1;
+	}
+	ruleset = sys_landlock_create_ruleset(&attr, sizeof(attr), 0);
+	if (ruleset < 0) {
+		pr_err("landlock: create ruleset: %d\n", ruleset);
+		sys_close(root);
+		return -1;
+	}
+	rule.parent_fd = root;
+	ret = sys_landlock_add_rule(ruleset, LANDLOCK_RULE_PATH_BENEATH, &rule, 0);
+	if (!ret && proc_fd >= 0) {
+		rule.parent_fd = proc_fd;
+		ret = sys_landlock_add_rule(ruleset, LANDLOCK_RULE_PATH_BENEATH, &rule, 0);
+	}
+	if (!ret)
+		ret = sys_landlock_restrict_self(ruleset, 0);
+	if (ret)
+		pr_err("landlock: %ld\n", ret);
+	sys_close(ruleset);
+	sys_close(root);
+	return ret ? -1 : 0;
+}
+
 static int restore_seccomp_filter(pid_t tid, struct thread_restore_args *args)
 {
 	unsigned int flags = args->seccomp_force_tsync ? SECCOMP_FILTER_FLAG_TSYNC : 0;
@@ -896,6 +951,9 @@ __visible long __export_restore_thread(struct thread_restore_args *args)
 		goto core_restore_end;
 
 	restore_finish_stage(task_entries_local, CR_STATE_RESTORE_SIGCHLD);
+
+	if (restore_landlock(args->ta->landlock_fs, args->ta->proc_fd))
+		BUG();
 
 	/*
 	 * Make sure it's before creds, since it's privileged
@@ -2837,6 +2895,9 @@ __visible long __export_restore_task(struct task_restore_args *args)
 	restore_finish_stage(task_entries_local, CR_STATE_RESTORE_SIGCHLD);
 
 	rst_tcp_socks_all(args);
+
+	if (restore_landlock(args->landlock_fs, args->proc_fd))
+		goto core_restore_end;
 
 	/*
 	 * Make sure it's before creds, since it's privileged
