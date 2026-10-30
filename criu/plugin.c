@@ -215,6 +215,15 @@ int cr_plugin_init(int stage)
 	char *path;
 	DIR *d;
 
+#ifdef CONFIG_STATIC
+	/*
+	 * A plugin links against the symbols criu exports, and a static criu
+	 * exports none: loading one would fail every dump and restore.
+	 */
+	pr_info("Built static: no plugins are loaded\n");
+	return 0;
+#endif
+
 	if (opts.libdir == NULL) {
 		path = getenv("CRIU_LIBS_DIR");
 		if (path)
