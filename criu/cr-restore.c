@@ -3647,6 +3647,7 @@ static int sigreturn_restore(pid_t pid, struct task_restore_args *task_args, uns
 	 * Apparmor we can change each thread after they have been created.
 	 */
 	task_args->lsm_type = kdat.lsm;
+	task_args->landlock_fs = opts.landlock_fs;
 
 	/*
 	 * Make root and cwd restore _that_ late not to break any

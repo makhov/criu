@@ -763,6 +763,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		{ "network-lock", required_argument, 0, 1100 },
 		{ "image-io-mode", required_argument, 0, 1101 },
 		{ "seccomp-notify-socket", required_argument, 0, 1106 },
+		{ "landlock-fs", required_argument, 0, 1107 },
 		BOOL_OPT("mntns-compat-mode", &opts.mntns_compat_mode),
 		BOOL_OPT("unprivileged", &opts.unprivileged),
 		BOOL_OPT("ghost-fiemap", &opts.ghost_fiemap),
@@ -1168,6 +1169,17 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		case 1106:
 			SET_CHAR_OPTS(seccomp_notify_socket, optarg);
 			break;
+		case 1107: {
+			char *end;
+
+			errno = 0;
+			opts.landlock_fs = strtoull(optarg, &end, 0);
+			if (errno || *end || !opts.landlock_fs) {
+				pr_err("Invalid --landlock-fs value: %s\n", optarg);
+				return 1;
+			}
+			break;
+		}
 		case 'V':
 			pr_msg("Version: %s\n", CRIU_VERSION);
 			if (strcmp(CRIU_GITID, "0"))

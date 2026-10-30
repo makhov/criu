@@ -250,6 +250,8 @@ struct task_restore_args {
 #endif
 	int lsm_type;
 	int child_subreaper;
+	/* --landlock-fs: rights to confine each thread to its root, 0 for none. */
+	u64 landlock_fs;
 	int membarrier_registration_mask;
 	bool has_clone3_set_tid;
 
