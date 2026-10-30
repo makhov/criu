@@ -208,6 +208,8 @@ struct cr_options {
 	unsigned int empty_ns;
 	int tcp_skip_in_flight;
 	bool lazy_pages;
+	/* lazy-pages: copy pages only on faults, never in the background. */
+	int lazy_pages_on_demand;
 	char *work_dir;
 	int network_lock_method;
 	int skip_file_rwx_check;

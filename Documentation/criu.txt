@@ -1010,6 +1010,17 @@ To fetch pages from a remote page server, use *--page-server* with
 *--address* and *--port*. See the *page-server* command for connection
 and TLS options.
 
+*--lazy-pages-on-demand*::
+    Inject only the pages the restored processes access, and none in the
+    background. The processes then use memory for what they touch rather
+    than for the whole dump, and the daemon keeps serving them for as
+    long as they run: it exits once it finds them all gone, and the
+    images (or the page server) must stay available until then. A caller
+    that knows when the processes are done may stop the daemon itself.
+    Sent *SIGUSR1*, the daemon copies all the pages left, as without this
+    option, and exits once done: dump the processes only after that, or
+    the pages they never touched are missing from the dump.
+
 *exec*
 ~~~~~~
 Executes a system call inside a destination task\'s context. This functionality
