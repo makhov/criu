@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/ioctl.h>
+#include <sys/signalfd.h>
 #include <sys/un.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -106,6 +107,14 @@ static LIST_HEAD(exiting_lpis);
 static LIST_HEAD(pending_lpis);
 static int epollfd;
 static bool restore_finished;
+/*
+ * SIGUSR1 asks a daemon that serves only faults (--lazy-pages-on-demand)
+ * to copy all the pages left after all, and exit when done: a dump of the
+ * restored processes needs their memory in place, and would take a page
+ * nobody touched for one never written.
+ */
+static bool drain;
+static struct epoll_rfd drain_rfd;
 static struct epoll_rfd lazy_sk_rfd;
 /* socket for communication with lazy-pages daemon */
 static int lazy_pages_sk_id = -1;
@@ -1263,8 +1272,13 @@ static int handle_requests(int epollfd, struct epoll_event **events, int nr_fds)
 			ret = complete_forks(epollfd, events, &nr_fds);
 			if (ret < 0)
 				goto out;
+			/*
+			 * Once the restore is done, pages nobody asked for are
+			 * copied whenever there is no fault to serve, unless
+			 * only faults are to be served.
+			 */
 			if (restore_finished)
-				poll_timeout = 0;
+				poll_timeout = (opts.lazy_pages_on_demand && !drain) ? -1 : 0;
 			if (!restore_finished || !ret)
 				continue;
 		}
@@ -1273,6 +1287,19 @@ static int handle_requests(int epollfd, struct epoll_event **events, int nr_fds)
 		ret = 0;
 
 		list_for_each_entry_safe(lpi, n, &lpis, l) {
+			if (opts.lazy_pages_on_demand && !drain) {
+				/*
+				 * Its pages are only ever copied on faults: it
+				 * is done with once its process has gone.
+				 */
+				if (lpi->exited && list_empty(&lpi->reqs)) {
+					lazy_pages_summary(lpi);
+					list_del(&lpi->l);
+					lpi_put(lpi);
+				}
+				continue;
+			}
+
 			if (!list_empty(&lpi->iovs) && list_empty(&lpi->reqs)) {
 				ret = xfer_pages(lpi);
 				if (ret < 0)
@@ -1413,6 +1440,39 @@ close_uffd:
 	return -1;
 }
 
+static int drain_event(struct epoll_rfd *rfd)
+{
+	struct signalfd_siginfo si;
+
+	if (read(rfd->fd, &si, sizeof(si)) != sizeof(si)) {
+		pr_perror("Can't read signalfd");
+		return -1;
+	}
+	if (!drain)
+		pr_info("Copying the remaining pages (SIGUSR1)\n");
+	drain = true;
+	return 1;
+}
+
+static int prepare_drain_signal(int epollfd)
+{
+	sigset_t mask;
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGUSR1);
+	if (sigprocmask(SIG_BLOCK, &mask, NULL)) {
+		pr_perror("Can't block SIGUSR1");
+		return -1;
+	}
+	drain_rfd.fd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
+	if (drain_rfd.fd < 0) {
+		pr_perror("Can't create signalfd");
+		return -1;
+	}
+	drain_rfd.read_event = drain_event;
+	return epoll_add_rfd(epollfd, &drain_rfd);
+}
+
 int cr_lazy_pages(bool daemon)
 {
 	struct epoll_event *events = NULL;
@@ -1455,13 +1515,18 @@ int cr_lazy_pages(bool daemon)
 
 	/*
 	 * we poll nr_tasks userfault fds, UNIX socket between lazy-pages
-	 * daemon and the cr-restore, and, optionally TCP socket for
-	 * remote pages
+	 * daemon and the cr-restore, the signalfd asking it to drain, and,
+	 * optionally TCP socket for remote pages
 	 */
-	nr_fds = task_entries->nr_tasks + (opts.use_page_server ? 2 : 1);
+	nr_fds = task_entries->nr_tasks + (opts.use_page_server ? 3 : 2);
 	epollfd = epoll_prepare(nr_fds, &events);
 	if (epollfd < 0)
 		return -1;
+
+	if (prepare_drain_signal(epollfd)) {
+		xfree(events);
+		return -1;
+	}
 
 	if (prepare_uffds(lazy_sk, epollfd)) {
 		xfree(events);
