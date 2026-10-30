@@ -1,5 +1,8 @@
 #include <linux/filter.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <ptrace.h>
@@ -7,6 +10,8 @@
 #include "common/config.h"
 #include "imgset.h"
 #include "kcmp.h"
+#include "cr_options.h"
+#include "fdstore.h"
 #include "pstree.h"
 #include <compel/ptrace.h>
 #include "proc_parse.h"
@@ -391,6 +396,70 @@ static void free_seccomp_filters(void)
 	}
 }
 
+/*
+ * The kernel does not report whether a filter has a notification
+ * listener, so treat every filter that can return SECCOMP_RET_USER_NOTIF
+ * as one that had a listener when it was dumped.
+ */
+static bool filter_can_notify(const SeccompFilter *sf)
+{
+	const struct sock_filter *insn = (const struct sock_filter *)sf->filter.data;
+	size_t i, n = sf->filter.len / sizeof(struct sock_filter);
+
+	for (i = 0; i < n; i++) {
+		if (insn[i].code == (BPF_RET | BPF_K) &&
+		    (insn[i].k & SECCOMP_RET_ACTION_FULL) == SECCOMP_RET_USER_NOTIF)
+			return true;
+	}
+	return false;
+}
+
+static int seccomp_notify_sk_id = -1;
+
+/* Connects to the --seccomp-notify-socket supervisor before tasks are forked. */
+int prepare_seccomp_notify_socket(void)
+{
+	struct sockaddr_un addr = { .sun_family = AF_UNIX };
+	int fd, ret = -1;
+
+	if (!opts.seccomp_notify_socket)
+		return 0;
+
+	if (strlen(opts.seccomp_notify_socket) >= sizeof(addr.sun_path)) {
+		pr_err("seccomp notify socket path is too long: %s\n", opts.seccomp_notify_socket);
+		return -1;
+	}
+	strcpy(addr.sun_path, opts.seccomp_notify_socket);
+
+	fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+	if (fd < 0) {
+		pr_perror("Can't create seccomp notify socket");
+		return -1;
+	}
+	if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		pr_perror("Can't connect to seccomp notify socket %s", opts.seccomp_notify_socket);
+		goto out;
+	}
+	seccomp_notify_sk_id = fdstore_add(fd);
+	if (seccomp_notify_sk_id < 0) {
+		pr_err("Can't add seccomp notify socket to fdstore\n");
+		goto out;
+	}
+	ret = 0;
+out:
+	close(fd);
+	return ret;
+}
+
+int seccomp_notify_sk_get(void)
+{
+	if (seccomp_notify_sk_id < 0) {
+		pr_err("seccomp notify socket is not connected\n");
+		return -1;
+	}
+	return fdstore_get(seccomp_notify_sk_id);
+}
+
 void seccomp_rst_reloc(struct thread_restore_args *args)
 {
 	size_t j, off;
@@ -421,6 +490,8 @@ int seccomp_prepare_threads(struct pstree_item *item, struct task_restore_args *
 		SeccompFilter *sf;
 
 		args->seccomp_mode = SECCOMP_MODE_DISABLED;
+		args->seccomp_notify = false;
+		args->seccomp_notify_sk = -1;
 		args->seccomp_filters_pos = 0;
 		args->seccomp_filters_n = 0;
 		args->seccomp_filters = NULL;
@@ -484,6 +555,10 @@ int seccomp_prepare_threads(struct pstree_item *item, struct task_restore_args *
 			f->sock_fprog.len = sf->filter.len / sizeof(struct sock_filter);
 			f->sock_fprog.filter = args->seccomp_filters_data + off;
 			f->flags = sf->flags;
+			if (opts.seccomp_notify_socket && filter_can_notify(sf)) {
+				f->flags |= SECCOMP_FILTER_FLAG_NEW_LISTENER;
+				args->seccomp_notify = true;
+			}
 
 			memcpy(f->sock_fprog.filter, sf->filter.data, sf->filter.len);
 

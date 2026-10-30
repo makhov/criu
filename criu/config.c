@@ -762,6 +762,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		{ "lsm-mount-context", required_argument, 0, 1099 },
 		{ "network-lock", required_argument, 0, 1100 },
 		{ "image-io-mode", required_argument, 0, 1101 },
+		{ "seccomp-notify-socket", required_argument, 0, 1106 },
 		BOOL_OPT("mntns-compat-mode", &opts.mntns_compat_mode),
 		BOOL_OPT("unprivileged", &opts.unprivileged),
 		BOOL_OPT("ghost-fiemap", &opts.ghost_fiemap),
@@ -1163,6 +1164,9 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		case 1101:
 			if (parse_image_io_mode(&opts, optarg))
 				return 2;
+			break;
+		case 1106:
+			SET_CHAR_OPTS(seccomp_notify_socket, optarg);
 			break;
 		case 'V':
 			pr_msg("Version: %s\n", CRIU_VERSION);

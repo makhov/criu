@@ -126,6 +126,12 @@ struct thread_restore_args {
 	void *seccomp_filters_data;
 	unsigned int seccomp_filters_n;
 	bool seccomp_force_tsync;
+	/*
+	 * Set when a filter is restored with a listener; the restorer sends
+	 * each listener over seccomp_notify_sk (--seccomp-notify-socket).
+	 */
+	bool seccomp_notify;
+	int seccomp_notify_sk;
 
 	struct rst_shstk_info shstk;
 

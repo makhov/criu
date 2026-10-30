@@ -1,0 +1,350 @@
+(00.000000) CRIU run id = e0b75485-98fd-4e66-aa3f-440f0532daf5
+(00.000253) Version: 4.2.1 (gitid v4.2.1-605-gbc54b592b)
+(00.000324) Running on lima-gcr Linux 7.0.0-38-generic #38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep  4 09:28:02 UTC 2026 aarch64
+(00.000406) Loaded kdat cache from /run/criu.kdat
+(00.000502) Hugetlb size 0 Mb is supported but cannot get dev's number
+(00.000578) Hugetlb size 2 Mb is supported but cannot get dev's number
+(00.000654) Hugetlb size 32 Mb is supported but cannot get dev's number
+(00.000730) Hugetlb size 1024 Mb is supported but cannot get dev's number
+(00.001219) rlimit: RLIMIT_NOFILE unlimited for self
+(00.001557) Dump CRIU run id = 8927a944-6f09-4f50-a563-2c309221b6fa
+(00.001813) kernel pid_max=4194304
+(00.001886) Reading image tree
+(00.002264) Add mnt ns 6 pid 43630
+(00.002333) Add net ns 2 pid 43630
+(00.002401) Add pid ns 1 pid 43630
+(00.002505) Add user ns 7 pid 43630
+(00.002633) pstree pid_max=43630
+(00.002705) Will restore in 0 namespaces
+(00.002780) NS mask to use 0
+(00.002886) Collecting 51/56 (flags 3)
+(00.003818) No memfd.img image
+(00.003896)  `- ... done
+(00.003977) Collecting 40/54 (flags 2)
+(00.004183) Collected [Users/makhov/www/criu/test/others/seccomp-notify/seccomp-notify] ID 0x1
+(00.004258) Collected [usr/lib/aarch64-linux-gnu/libc.so.6] ID 0x2
+(00.004337) Collected [usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1] ID 0x3
+(00.004410) Collected [dev/null] ID 0x4
+(00.004484) Collected [Users/makhov/www/criu/test/others/seccomp-notify/child.log] ID 0x5
+(00.004584) Collected [Users/makhov/www/criu/test/others/seccomp-notify] ID 0x6
+(00.004659) Collected [.] ID 0x7
+(00.004800)  `- ... done
+(00.004871) Collecting 46/69 (flags 0)
+(00.004984) No remap-fpath.img image
+(00.005059)  `- ... done
+(00.005133) tty: Standard stream is not a terminal, may fail later
+(00.005249) No apparmor.img image
+(00.005359) No cgroup.img image
+(00.005460) Running pre-restore scripts
+(00.005585) No pidns-1.img image
+(00.005895) Forking task with 43630 pid (flags 0x0)
+(00.005966) Creating process using clone3()
+(00.006144) PID: real 43630 virt 43630
+(00.006165) Restoring a task without GCS
+(00.006564)  43630: timens: monotonic -1 984964451
+(00.006637)  43630: timens: boottime -1 984890740
+(00.006739)  43630: cg: Cgroup namespace inherited from parent
+(00.006817)  43630: cg: Cgroups 1 inherited from parent
+(00.006887)  43630: Calling restore_sid() for init
+(00.006961)  43630: Restoring 43630 to 43630 sid
+(00.007042)  43630: Collecting 44/37 (flags 2)
+(00.007153)  43630: No tty-info.img image
+(00.007227)  43630:  `- ... done
+(00.007297)  43630: Collecting 45/51 (flags 0)
+(00.007407)  43630: No tty-data.img image
+(00.007487)  43630:  `- ... done
+(00.007555)  43630: Restoring namespaces 43630 flags 0x0
+(00.007632)  43630: Preparing info about shared resources
+(00.007884)  43630: Collecting 48/38 (flags 0)
+(00.007999)  43630: No filelocks.img image
+(00.008070)  43630:  `- ... done
+(00.008140)  43630: Collecting 42/27 (flags 0)
+(00.008249)  43630: No pipes-data.img image
+(00.008321)  43630:  `- ... done
+(00.008390)  43630: Collecting 43/27 (flags 0)
+(00.008514)  43630: No fifo-data.img image
+(00.008584)  43630:  `- ... done
+(00.008654)  43630: Collecting 41/70 (flags 0)
+(00.008762)  43630: No sk-queues.img image
+(00.008833)  43630:  `- ... done
+(00.009085)  43630: Found 18 VMAs in image
+(00.009163)  43630: vma 0xc6d86edd0000 0xc6d86edd3000
+(00.009235)  43630: vma 0xc6d86edef000 0xc6d86edf0000
+(00.009309)  43630: vma 0xc6d86edf0000 0xc6d86edf1000
+(00.009381)  43630: vma 0xc6d87d805000 0xc6d87da00000
+(00.009459)  43630: vma 0xf34668a30000 0xf34668bd9000
+(00.009532)  43630: vma 0xf34668bd9000 0xf34668bed000
+(00.009603)  43630: vma 0xf34668bed000 0xf34668bf0000
+(00.009673)  43630: vma 0xf34668bf0000 0xf34668bf2000
+(00.009744)  43630: vma 0xf34668bf2000 0xf34668bfe000
+(00.009815)  43630: vma 0xf34668c04000 0xf34668c2e000
+(00.009885)  43630: vma 0xf34668c31000 0xf34668c33000
+(00.009956)  43630: vma 0xf34668c3a000 0xf34668c3c000
+(00.010026)  43630: vma 0xf34668c3c000 0xf34668c40000
+(00.010093)  43630: vma 0xf34668c40000 0xf34668c42000
+(00.010221)  43630: vma 0xf34668c42000 0xf34668c44000
+(00.010301)  43630: vma 0xf34668c44000 0xf34668c45000
+(00.010382)  43630: vma 0xf34668c45000 0xf34668c46000
+(00.010477)  43630: vma 0xffffc6cd8000 0xffffc6cf9000
+(00.010721)  43630: Collect fdinfo pid=43630 fd=0 id=0x4
+(00.010804)  43630: Collect fdinfo pid=43630 fd=1 id=0x4
+(00.010888)  43630: Collect fdinfo pid=43630 fd=2 id=0x4
+(00.010976)  43630: Collect fdinfo pid=43630 fd=3 id=0x5
+(00.011385)  43630: unix: Adding fake unix queuers
+(00.011472)  43630: skqueue: Preparing SCMs
+(00.011567)  43630: unix: Adding fake unix queuers (finish)
+(00.011647)  43630: unix: ghost: Resolving addresses
+(00.011732)  43630: File descs:
+(00.011815)  43630:  `- type 1 ID 0x1
+(00.011898)  43630:  `- type 1 ID 0x2
+(00.011985)  43630:  `- type 1 ID 0x3
+(00.012073)  43630:  `- type 1 ID 0x4
+(00.012160)  43630:    `- FD 0 pid 43630
+(00.012239)  43630:    `- FD 1 pid 43630
+(00.012320)  43630:    `- FD 2 pid 43630
+(00.012402)  43630:  `- type 1 ID 0x5
+(00.012501)  43630:    `- FD 3 pid 43630
+(00.012584)  43630:  `- type 1 ID 0x6
+(00.012667)  43630:  `- type 1 ID 0x7
+(00.013012)  43630: No parent images directory provided
+(00.013231)  43630: Opened local page read 1 (parent 0)
+(00.013395)  43630: nr_restored_pages: 25
+(00.013501)  43630: nr_shared_pages:   0
+(00.013582)  43630: nr_dropped_pages:  0
+(00.013663)  43630: nr_enqueued:       16
+(00.013746)  43630: nr_lazy:           0
+(00.013832)  43630: Shrunk premap area to 0xe1f96d999000(0)
+(00.013914)  43630: Restore on-core sigactions for 43630
+(00.014025)  43630: Restoring children in alien sessions:
+(00.014154)  43630: Restoring children in our session:
+(00.014246)  43630: Restoring 43630 to 43630 pgid
+(00.014466)  43630: Restoring resources
+(00.014641)  43630: async: Daemon started with 4 threads
+(00.014666)  43630: Opening fdinfo-s
+(00.014945)  43630: 		Create fd for 0
+(00.015034)  43630: 			Going to dup 0 into 1
+(00.015128)  43630: 			Going to dup 0 into 2
+(00.015213)  43630: 	Receive fd for 1
+(00.015309)  43630: 	Receive fd for 2
+(00.015504)  43630: 		Create fd for 3
+(00.015594)  43630: Opening 0x00c6d86edd0000-0x00c6d86edd3000 0000000000000000 (40041) vma
+(00.015844)  43630: Opening 0x00c6d86edef000-0x00c6d86edf0000 0x0000000000f000 (40041) vma
+(00.015931)  43630: Opening 0x00c6d86edf0000-0x00c6d86edf1000 0x00000000010000 (40041) vma
+(00.016014)  43630: Opening 0x00f34668a30000-0x00f34668bd9000 0000000000000000 (20040041) vma
+(00.016117)  43630: Opening 0x00f34668bd9000-0x00f34668bed000 0x000000001a9000 (20040041) vma
+(00.016198)  43630: Opening 0x00f34668bed000-0x00f34668bf0000 0x000000001ad000 (40041) vma
+(00.016283)  43630: Opening 0x00f34668bf0000-0x00f34668bf2000 0x000000001b0000 (40041) vma
+(00.016367)  43630: Opening 0x00f34668c04000-0x00f34668c2e000 0000000000000000 (20040041) vma
+(00.016480)  43630: Opening 0x00f34668c42000-0x00f34668c44000 0x0000000002e000 (41) vma
+(00.016564)  43630: Opening 0x00f34668c44000-0x00f34668c45000 0x00000000030000 (41) vma
+(00.016782)  43630: `- render 10 iovs (0xc6d86edd0000:4096...)
+(00.016870)  43630: Restoring a task without GCS
+(00.016952)  43630: Restore via sigreturn
+(00.017530)  43630: async: daemon stopped
+(00.017621)  43630: Parsed b34374400000-b34374575000 vma
+(00.017680)  43630: Parsed b34374582000-b343745a0000 vma
+(00.017729)  43630: Parsed b34374582000-b343745a7000 vma
+(00.017784)  43630: Parsed b34374582000-b343745d6000 vma
+(00.017844)  43630: Parsed b3439d6b8000-b3439d800000 vma
+(00.017892)  43630: Parsed e1f96ddc0000-e1f96ddd0000 vma
+(00.017941)  43630: Parsed e1f96ddc0000-e1f96dde6000 vma
+(00.017998)  43630: Parsed e1f96ddc0000-e1f96ddff000 vma
+(00.018047)  43630: Parsed e1f96ddc0000-e1f96de00000 vma
+(00.018094)  43630: Parsed e1f96ddc0000-e1f96de01000 vma
+(00.018140)  43630: Parsed e1f96de10000-e1f96de1f000 vma
+(00.018194)  43630: Parsed e1f96de10000-e1f96de2f000 vma
+(00.018240)  43630: Parsed e1f96de10000-e1f96de30000 vma
+(00.018289)  43630: Parsed e1f96de10000-e1f96de31000 vma
+(00.018333)  43630: Parsed e1f96de40000-e1f96de4e000 vma
+(00.018381)  43630: Parsed e1f96de40000-e1f96de5f000 vma
+(00.018488)  43630: Parsed e1f96de40000-e1f96de60000 vma
+(00.018539)  43630: Parsed e1f96de40000-e1f96de61000 vma
+(00.018594)  43630: Parsed e1f96de40000-e1f96de64000 vma
+(00.018649)  43630: Parsed e1f96de70000-e1f96dea4000 vma
+(00.018700)  43630: Parsed e1f96de70000-e1f96debd000 vma
+(00.018746)  43630: Parsed e1f96de70000-e1f96dec0000 vma
+(00.018800)  43630: Parsed e1f96de70000-e1f96dec2000 vma
+(00.018859)  43630: Parsed e1f96ded0000-e1f96ded5000 vma
+(00.018907)  43630: Parsed e1f96ded0000-e1f96deef000 vma
+(00.018953)  43630: Parsed e1f96ded0000-e1f96def0000 vma
+(00.019006)  43630: Parsed e1f96ded0000-e1f96def1000 vma
+(00.019056)  43630: Parsed e1f96df00000-e1f96df80000 vma
+(00.019109)  43630: Parsed e1f96df00000-e1f96df8f000 vma
+(00.019156)  43630: Parsed e1f96df00000-e1f96df90000 vma
+(00.019201)  43630: Parsed e1f96df00000-e1f96df91000 vma
+(00.019254)  43630: Parsed e1f96dfa0000-e1f96dff0000 vma
+(00.019300)  43630: Parsed e1f96dfa0000-e1f96dffe000 vma
+(00.019344)  43630: Parsed e1f96dfa0000-e1f96e000000 vma
+(00.019397)  43630: Parsed e1f96dfa0000-e1f96e001000 vma
+(00.019445)  43630: Parsed e1f96e010000-e1f96e057000 vma
+(00.019497)  43630: Parsed e1f96e010000-e1f96e06e000 vma
+(00.019562)  43630: Parsed e1f96e010000-e1f96e070000 vma
+(00.019618)  43630: Parsed e1f96e010000-e1f96e071000 vma
+(00.019673)  43630: Parsed e1f96e080000-e1f96e094000 vma
+(00.019720)  43630: Parsed e1f96e080000-e1f96e0af000 vma
+(00.019764)  43630: Parsed e1f96e080000-e1f96e0b0000 vma
+(00.019818)  43630: Parsed e1f96e080000-e1f96e0b1000 vma
+(00.019870)  43630: Parsed e1f96e0c0000-e1f96e29c000 vma
+(00.019937)  43630: Parsed e1f96e0c0000-e1f96e2ac000 vma
+(00.019984)  43630: Parsed e1f96e0c0000-e1f96e2b0000 vma
+(00.020029)  43630: Parsed e1f96e0c0000-e1f96e2b1000 vma
+(00.020075)  43630: Parsed e1f96e2c0000-e1f96e2de000 vma
+(00.020119)  43630: Parsed e1f96e2c0000-e1f96e2ef000 vma
+(00.020163)  43630: Parsed e1f96e2c0000-e1f96e2f0000 vma
+(00.020206)  43630: Parsed e1f96e2c0000-e1f96e2f1000 vma
+(00.020250)  43630: Parsed e1f96e300000-e1f96e4e0000 vma
+(00.020294)  43630: Parsed e1f96e300000-e1f96e4ee000 vma
+(00.020337)  43630: Parsed e1f96e300000-e1f96e500000 vma
+(00.020381)  43630: Parsed e1f96e300000-e1f96e50f000 vma
+(00.020424)  43630: Parsed e1f96e510000-e1f96e51c000 vma
+(00.020482)  43630: Parsed e1f96e510000-e1f96e52f000 vma
+(00.020536)  43630: Parsed e1f96e510000-e1f96e530000 vma
+(00.020581)  43630: Parsed e1f96e510000-e1f96e531000 vma
+(00.020626)  43630: Parsed e1f96e540000-e1f96e6e9000 vma
+(00.020678)  43630: Parsed e1f96e540000-e1f96e6fd000 vma
+(00.020732)  43630: Parsed e1f96e540000-e1f96e700000 vma
+(00.020779)  43630: Parsed e1f96e540000-e1f96e702000 vma
+(00.020833)  43630: Parsed e1f96e540000-e1f96e70e000 vma
+(00.020879)  43630: Parsed e1f96e710000-e1f96e717000 vma
+(00.020938)  43630: Parsed e1f96e710000-e1f96e72f000 vma
+(00.020989)  43630: Parsed e1f96e710000-e1f96e730000 vma
+(00.021036)  43630: Parsed e1f96e710000-e1f96e731000 vma
+(00.021082)  43630: Parsed e1f96e740000-e1f96e759000 vma
+(00.021126)  43630: Parsed e1f96e740000-e1f96e76f000 vma
+(00.021171)  43630: Parsed e1f96e740000-e1f96e770000 vma
+(00.021215)  43630: Parsed e1f96e740000-e1f96e771000 vma
+(00.021273)  43630: Parsed e1f96e780000-e1f96e7a1000 vma
+(00.021317)  43630: Parsed e1f96e780000-e1f96e7be000 vma
+(00.021370)  43630: Parsed e1f96e780000-e1f96e7c0000 vma
+(00.021419)  43630: Parsed e1f96e780000-e1f96e7c1000 vma
+(00.021484)  43630: Parsed e1f96e7d0000-e1f96e7d8000 vma
+(00.021534)  43630: Parsed e1f96e7d0000-e1f96e7ef000 vma
+(00.021590)  43630: Parsed e1f96e7d0000-e1f96e7f0000 vma
+(00.021637)  43630: Parsed e1f96e7d0000-e1f96e7f1000 vma
+(00.021681)  43630: Parsed e1f96e800000-e1f96e8e9000 vma
+(00.021725)  43630: Parsed e1f96e800000-e1f96e8fc000 vma
+(00.021780)  43630: Parsed e1f96e800000-e1f96e910000 vma
+(00.021830)  43630: Parsed e1f96e800000-e1f96e911000 vma
+(00.021877)  43630: Parsed e1f96e800000-e1f96e912000 vma
+(00.021925)  43630: Parsed e1f96e914000-e1f96e920000 vma
+(00.021976)  43630: Parsed e1f96e914000-e1f96eb13000 vma
+(00.022024)  43630: Parsed e1f96e914000-e1f96eb20000 vma
+(00.022103)  43630: Parsed e1f96e914000-e1f96eb30000 vma
+(00.022161)  43630: Parsed e1f96e914000-e1f96eb32000 vma
+(00.022213)  43630: Parsed e1f96e914000-e1f96eb36000 vma
+(00.022260)  43630: Parsed e1f96eb38000-e1f96eb3a000 vma
+(00.022305)  43630: Parsed e1f96eb38000-e1f96eb40000 vma
+(00.022351)  43630: Parsed e1f96eb38000-e1f96eb52000 vma
+(00.022396)  43630: Parsed e1f96eb38000-e1f96eb6f000 vma
+(00.022448)  43630: Parsed e1f96eb38000-e1f96eb70000 vma
+(00.022493)  43630: Parsed e1f96eb38000-e1f96eb71000 vma
+(00.022546)  43630: Parsed e1f96eb38000-e1f96eb72000 vma
+(00.022603)  43630: Parsed e1f96eb73000-e1f96eb9d000 vma
+(00.022648)  43630: Parsed e1f96eb9e000-e1f96eba2000 vma
+(00.022693)  43630: Parsed e1f96eb9e000-e1f96eba3000 vma
+(00.022740)  43630: Parsed e1f96eb9e000-e1f96eba5000 vma
+(00.022797)  43630: Parsed e1f96eb9e000-e1f96eba7000 vma
+(00.022851)  43630: Parsed e1f96eb9e000-e1f96eba8000 vma
+(00.022903)  43630: Parsed e1f96eb9e000-e1f96eba9000 vma
+(00.022948)  43630: Parsed e1f96eb9e000-e1f96ebab000 vma
+(00.023005)  43630: Parsed e1f96eb9e000-e1f96ebaf000 vma
+(00.023063)  43630: Parsed e1f96eb9e000-e1f96ebb1000 vma
+(00.023109)  43630: Parsed e1f96eb9e000-e1f96ebb3000 vma
+(00.023153)  43630: Parsed e1f96eb9e000-e1f96ebb4000 vma
+(00.023207)  43630: Parsed e1f96eb9e000-e1f96ebb5000 vma
+(00.023261)  43630: Parsed ffffdf395000-ffffdf3b6000 vma
+(00.023312)  43630: 1 threads require 112K of memory
+(00.023360)  43630: Found bootstrap VMA hint at: 0x10000 (needs ~136K)
+(00.023447)  43630: 	call mremap(0xe1f96eb38000, 8192, 8192, MAYMOVE | FIXED, 0x27000)
+(00.023506)  43630: 	call mremap(0xe1f96eba3000, 8192, 8192, MAYMOVE | FIXED, 0x29000)
+(00.023591)  43630: Thread    0 stack  0x1c080 rt_sigframe  0x24080
+(00.023702)  43630: Going to chroot into /proc/self/fd/11
+(00.023764)  43630: Restoring umask to 22
+(00.023859)  43630: task_args: 0x26000
+task_args->pid: 43630
+task_args->nr_threads: 1
+task_args->clone_restore_fn: 0x1224c
+task_args->thread_args: 0x26580
+(00.023931) pie: 43630: Switched to the restorer 43630
+(00.023980) pie: 43630: vdso: Remap rt-vdso 0xe1f96ebaf000 -> 0x30000
+(00.024043) pie: 43630: vdso: Remap rt-vvar 0xe1f96ebab000 -> 0x2c000
+(00.024101) pie: 43630: vdso: Using gettimeofday() on vdso at 0x30920
+(00.024277) pie: 43630: vdso: Using gettimeofday() on vdso at 0x30920
+(00.024327) pie: 43630: 	mmap(0xc6d86edd0000 -> 0xc6d86edd3000, 0x7 0x12 4)
+(00.024376) pie: 43630: 	mmap(0xc6d86edef000 -> 0xc6d86edf0000, 0x3 0x12 4)
+(00.024438) pie: 43630: 	mmap(0xc6d86edf0000 -> 0xc6d86edf1000, 0x3 0x12 4)
+(00.024507) pie: 43630: 	mmap(0xc6d87d805000 -> 0xc6d87da00000, 0x3 0x32 -1)
+(00.024565) pie: 43630: 	mmap(0xf34668a30000 -> 0xf34668bd9000, 0x5 0x12 5)
+(00.024629) pie: 43630: 	mmap(0xf34668bd9000 -> 0xf34668bed000, 0x0 0x12 5)
+(00.024679) pie: 43630: 	mmap(0xf34668bed000 -> 0xf34668bf0000, 0x3 0x12 5)
+(00.024736) pie: 43630: 	mmap(0xf34668bf0000 -> 0xf34668bf2000, 0x3 0x12 5)
+(00.024783) pie: 43630: 	mmap(0xf34668bf2000 -> 0xf34668bfe000, 0x3 0x32 -1)
+(00.024839) pie: 43630: 	mmap(0xf34668c04000 -> 0xf34668c2e000, 0x5 0x12 6)
+(00.024915) pie: 43630: 	mmap(0xf34668c31000 -> 0xf34668c33000, 0x3 0x32 -1)
+(00.024969) pie: 43630: 	mmap(0xf34668c3a000 -> 0xf34668c3c000, 0x3 0x32 -1)
+(00.025017) pie: 43630: 	mmap(0xf34668c3c000 -> 0xf34668c40000, 0x1 0x32 -1)
+(00.025065) pie: 43630: 	mmap(0xf34668c40000 -> 0xf34668c42000, 0x7 0x32 -1)
+(00.025112) pie: 43630: 	mmap(0xf34668c42000 -> 0xf34668c44000, 0x3 0x12 6)
+(00.025161) pie: 43630: 	mmap(0xf34668c44000 -> 0xf34668c45000, 0x3 0x12 6)
+(00.025217) pie: 43630: 	mmap(0xf34668c45000 -> 0xf34668c46000, 0x3 0x32 -1)
+(00.025276) pie: 43630: 	mmap(0xffffc6cd8000 -> 0xffffc6cf9000, 0x3 0x132 -1)
+(00.025332) pie: 43630: Preadv 0xc6d86edd0000:4096... (10 iovs)
+(00.025614) pie: 43630: `- returned 102400
+(00.025666) pie: 43630:    `- skip pagemap
+(00.025722) pie: 43630:    `- skip pagemap
+(00.025780) pie: 43630:    `- skip pagemap
+(00.025832) pie: 43630:    `- skip pagemap
+(00.025880) pie: 43630:    `- skip pagemap
+(00.025925) pie: 43630:    `- skip pagemap
+(00.026001) pie: 43630:    `- skip pagemap
+(00.026055) pie: 43630:    `- skip pagemap
+(00.026108) pie: 43630:    `- skip pagemap
+(00.026155) pie: 43630:    `- skip pagemap
+(00.026247) pie: 43630: vdso: Parsing at 0xf34668c40000 0xf34668c42000
+(00.026302) pie: 43630: vdso: PT_LOAD p_vaddr: 0x0
+(00.026348) pie: 43630: vdso: DT_GNU_HASH: 0xe8
+(00.026394) pie: 43630: vdso: DT_STRTAB: 0x1d0
+(00.026446) pie: 43630: vdso: DT_SYMTAB: 0x128
+(00.026501) pie: 43630: vdso: DT_STRSZ: 0x8a
+(00.026561) pie: 43630: vdso: DT_SYMENT: 0x18
+(00.026608) pie: 43630: vdso: nbucket 0x3 sym_off 0x1 bloom_sz 0x1 bucket 0xf34668c40100
+(00.026652) pie: 43630: vdso: symbol __kernel_clock_getres at address 0x948
+(00.026705) pie: 43630: vdso: symbol __kernel_clock_gettime at address 0x8f0
+(00.026759) pie: 43630: vdso: symbol __kernel_gettimeofday at address 0x920
+(00.026803) pie: 43630: vdso: symbol __kernel_rt_sigreturn at address 0xa20
+(00.026847) pie: 43630: vdso: image [vdso] 0xf34668c40000-0xf34668c42000 [vvar] 0xf34668c3c000-0xf34668c40000
+(00.026890) pie: 43630: vdso: Runtime vdso/vvar matches dumpee, remap inplace
+(00.026938) pie: 43630: vdso: Remap rt-vdso 0x30000 -> 0xf34668c40000
+(00.026995) pie: 43630: vdso: Remap rt-vvar 0x2c000 -> 0xf34668c3c000
+(00.027044) pie: 43630: vdso: Using gettimeofday() on vdso at 0xf34668c40920
+(00.027126) pie: 43630: Restoring scheduler params 0.0.0
+(00.027188) pie: 43630: rseq: rseq_abi_pointer = 0xf34668c3b740 signature = 0xd428bc00
+(00.027246) pie: 43630: 43630: Restored
+(00.027361) Running post-restore scripts
+(00.027461) net: Unlock network
+(00.027586) 43630: Restoring PAC keys
+(00.027702) pie: 43630: seccomp: Restoring mode 1 flags 0x19 on tid 43630 filter 0
+(00.027833) pie: 43630: seccomp: Restored mode 2 on tid 43630
+(00.028003) 43630 was trapped
+(00.028096) 43630 (native) is going to execute the syscall 98, required is 139
+(00.028218) 43630 was trapped
+(00.028329) 43630 was trapped
+(00.028416) 43630 (native) is going to execute the syscall 57, required is 139
+(00.028538) 43630 was trapped
+(00.028655) 43630 was trapped
+(00.028744) 43630 (native) is going to execute the syscall 57, required is 139
+(00.028884) 43630 was trapped
+(00.029002) 43630 was trapped
+(00.029087) 43630 (native) is going to execute the syscall 215, required is 139
+(00.029209) 43630 was trapped
+(00.029322) 43630 was trapped
+(00.029411) 43630 (native) is going to execute the syscall 139, required is 139
+(00.029552) 43630 was trapped
+(00.029669) 43630 was trapped
+(00.029751) 43630 (native) is going to execute the syscall 215, required is 215
+(00.029872) 43630 was stopped
+(00.029960) Run late stage hook from criu master for external devices
+(00.030042) Running pre-resume scripts
+(00.030129) Restore finished successfully. Tasks resumed.
+(00.030208) Writing stats
+(00.030734) Running post-resume scripts
