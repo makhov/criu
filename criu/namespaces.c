@@ -910,10 +910,29 @@ int collect_user_namespaces(bool for_dump)
 	return walk_namespaces(&user_ns_desc, collect_user_ns, NULL);
 }
 
+/*
+ * An external net namespace (--external net[INO]:KEY) is not dumped, and
+ * may belong to another user namespace: a Kubernetes pod's, made by the
+ * container runtime outside the user namespace its containers run in.
+ */
+static bool netns_is_external(int pid)
+{
+	char path[64], id[64], *val;
+	struct stat st;
+
+	snprintf(path, sizeof(path), "/proc/%d/ns/net", pid);
+	if (stat(path, &st))
+		return false;
+	snprintf(id, sizeof(id), "net[%u]", (unsigned int)st.st_ino);
+	val = external_lookup_by_key(id);
+	return !IS_ERR_OR_NULL(val);
+}
+
 static int check_user_ns(int pid)
 {
 	int status;
 	pid_t chld;
+	bool ext_net = netns_is_external(pid);
 
 	chld = fork();
 	if (chld == -1) {
@@ -977,7 +996,7 @@ static int check_user_ns(int pid)
 		if (switch_ns(pid, &user_ns_desc, NULL))
 			exit(1);
 
-		if ((root_ns_mask & CLONE_NEWNET) && switch_ns(pid, &net_ns_desc, NULL))
+		if ((root_ns_mask & CLONE_NEWNET) && !ext_net && switch_ns(pid, &net_ns_desc, NULL))
 			exit(1);
 		if ((root_ns_mask & CLONE_NEWUTS) && switch_ns(pid, &uts_ns_desc, NULL))
 			exit(1);
