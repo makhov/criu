@@ -145,9 +145,11 @@ int join_ns_add(const char *type, char *ns_file, char *extra_opts)
 	if (check_ns_file(ns_file))
 		return -1;
 
-	jn = xmalloc(sizeof(*jn));
+	jn = xzalloc(sizeof(*jn));
 	if (!jn)
 		return -1;
+	jn->ns_fd = -1;
+	jn->own_fd = -1;
 
 	jn->ns_file = xstrdup(ns_file);
 	if (!jn->ns_file) {
@@ -1854,19 +1856,76 @@ static int switch_user_join_ns(struct join_ns *jn)
 	return 0;
 }
 
+/*
+ * The namespaces to join (--join-ns) a container runtime made outside the
+ * user namespace the root task is cloned into, as a Kubernetes pod's IPC
+ * and UTS namespaces: from inside it, the task may not join them (their
+ * owner is another user namespace). CRIU, which may, joins them before the
+ * clone, and the task inherits them, as a container's first process
+ * inherits its runtime's; return_from_root_join_ns takes CRIU back after.
+ */
+int join_ns_before_root_clone(void)
+{
+	struct join_ns *jn;
+
+	list_for_each_entry(jn, &opts.join_ns, list) {
+		jn->own_fd = -1;
+		/*
+		 * Only those that change no paths: the root task does more
+		 * before it joins the rest itself (its cgroups, say).
+		 */
+		if (jn->nd != &ipc_ns_desc && jn->nd != &uts_ns_desc && jn->nd != &net_ns_desc)
+			continue;
+		jn->own_fd = open_proc(PROC_SELF, "ns/%s", jn->nd->str);
+		if (jn->own_fd < 0)
+			return -1;
+		jn->joined_by_criu = true;
+		if (get_join_ns_fd(jn))
+			return -1;
+		if (switch_join_ns(jn)) {
+			close_safe(&jn->ns_fd);
+			return -1;
+		}
+		close_safe(&jn->ns_fd);
+	}
+	return 0;
+}
+
+int return_from_root_join_ns(void)
+{
+	struct join_ns *jn;
+	int ret = 0;
+
+	list_for_each_entry(jn, &opts.join_ns, list) {
+		if (!jn->joined_by_criu || jn->own_fd < 0)
+			continue;
+		if (setns(jn->own_fd, jn->nd->cflag)) {
+			pr_perror("Can't return to CRIU's %s namespace", jn->nd->str);
+			ret = -1;
+		}
+		close_safe(&jn->own_fd);
+	}
+	return ret;
+}
+
 int join_namespaces(void)
 {
 	struct join_ns *jn, *user_jn = NULL;
 	int ret = -1;
 
-	list_for_each_entry(jn, &opts.join_ns, list)
+	list_for_each_entry(jn, &opts.join_ns, list) {
+		if (jn->joined_by_criu) {
+			jn->ns_fd = -1; /* joined before the clone: nothing to open */
+			continue;
+		}
 		if (get_join_ns_fd(jn))
 			goto err_out;
+	}
 
 	list_for_each_entry(jn, &opts.join_ns, list)
 		if (jn->nd == &user_ns_desc) {
 			user_jn = jn;
-		} else {
+		} else if (!jn->joined_by_criu) {
 			if (switch_join_ns(jn))
 				goto err_out;
 		}

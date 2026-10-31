@@ -67,6 +67,13 @@ struct join_ns {
 	char *ns_file;
 	struct ns_desc *nd; /* namespace descriptor */
 	int ns_fd;
+	/*
+	 * Joined by CRIU itself before it cloned the root task into a new
+	 * user namespace (join_ns_before_root_clone), with its own namespace
+	 * of that type in own_fd to go back to.
+	 */
+	bool joined_by_criu;
+	int own_fd;
 	/* extra options of --join-ns, like uid&gid in user namespace */
 	union {
 		struct user_ns_extra user_extra;
@@ -195,6 +202,8 @@ extern void free_userns_data(void);
 extern int join_ns_add(const char *type, char *ns_file, char *extra_opts);
 extern int check_namespace_opts(void);
 extern int join_namespaces(void);
+extern int join_ns_before_root_clone(void);
+extern int return_from_root_join_ns(void);
 
 typedef int (*uns_call_t)(void *arg, int fd, pid_t pid);
 /*

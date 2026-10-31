@@ -1094,12 +1094,19 @@ static int set_next_pid(void *arg)
 	return 0;
 }
 
+/*
+ * Set by CRIU, before it clones the root task, when it has joined the
+ * root task's external net namespace for it (see fork_with_pid).
+ */
+static bool root_ext_netns_joined;
+
 static inline int fork_with_pid(struct pstree_item *item)
 {
 	struct cr_clone_arg ca;
 	struct ns_id *pid_ns = NULL;
 	bool external_pidns = false;
 	int ret = -1;
+	int own_netns = -1;
 	pid_t pid = vpid(item);
 
 	if (item->pid->state != TASK_HELPER) {
@@ -1219,6 +1226,33 @@ static inline int fork_with_pid(struct pstree_item *item)
 		}
 	}
 
+	/*
+	 * An external net namespace in a new user namespace: one a container
+	 * runtime made outside it, as a Kubernetes pod's. From inside the new
+	 * user namespace the root task may not join it (its owner is another
+	 * user namespace), so CRIU joins it for the task, which inherits it
+	 * across the clone, as a container's first process does from its
+	 * runtime, and CRIU goes back to its own after.
+	 */
+	if (item == root_item && (root_ns_mask & CLONE_NEWUSER) && join_ns_before_root_clone()) {
+		return_from_root_join_ns();
+		ret = -1;
+		goto err_unlock;
+	}
+	if (item == root_item && (root_ns_mask & CLONE_NEWUSER) && (root_ns_mask & CLONE_NEWNET) &&
+	    net_get_root_ns()->ext_key) {
+		own_netns = open_proc(PROC_SELF, "ns/net");
+		if (own_netns < 0)
+			goto err_unlock;
+		if (net_set_ext(net_get_root_ns())) {
+			close(own_netns);
+			return_from_root_join_ns();
+			ret = -1;
+			goto err_unlock;
+		}
+		root_ext_netns_joined = true;
+	}
+
 	if (kdat.has_clone3_set_tid) {
 		ret = clone3_with_pid_noasan(restore_task_with_children, &ca,
 					     (ca.clone_flags & ~(CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWTIME)),
@@ -1239,6 +1273,30 @@ static inline int fork_with_pid(struct pstree_item *item)
 		close_pid_proc();
 		ret = clone_noasan(restore_task_with_children,
 				   (ca.clone_flags & ~(CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWTIME)) | SIGCHLD, &ca);
+	}
+
+	if (item == root_item && (root_ns_mask & CLONE_NEWUSER)) {
+		int err = errno;
+
+		if (return_from_root_join_ns()) {
+			if (own_netns >= 0)
+				close(own_netns);
+			ret = -1;
+			goto err_unlock;
+		}
+		errno = err;
+	}
+	if (own_netns >= 0) {
+		int err = errno;
+
+		if (setns(own_netns, CLONE_NEWNET)) {
+			pr_perror("Can't return to CRIU's net namespace");
+			close(own_netns);
+			ret = -1;
+			goto err_unlock;
+		}
+		close(own_netns);
+		errno = err;
 	}
 
 	if (ret < 0) {
@@ -1566,7 +1624,9 @@ static int __restore_task_with_children(void *_arg)
 		 */
 		if (root_ns_mask & CLONE_NEWNET) {
 			struct ns_id *ns = net_get_root_ns();
-			if (ns->ext_key)
+			if (root_ext_netns_joined)
+				ret = 0; /* CRIU joined it for us before the clone */
+			else if (ns->ext_key)
 				ret = net_set_ext(ns);
 			else
 				ret = unshare(CLONE_NEWNET);
