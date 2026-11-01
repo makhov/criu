@@ -7,6 +7,11 @@
 #include <sys/syscall.h>
 #include <sys/prctl.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <ucontext.h>
+#ifdef __GLIBC__
+#include <execinfo.h>
+#endif
 
 #include "types.h"
 #include "cr_options.h"
@@ -1256,6 +1261,50 @@ static void lazy_note(struct lazy_range **r, unsigned long *n, unsigned long va,
 	(*n)++;
 }
 
+/*
+ * Lazy ranges are PROT_NONE in the premap while the content restore runs,
+ * so whatever writes them is caught: code in criu by SIGSEGV (logged with
+ * a backtrace), a read by the kernel into them by EFAULT.
+ */
+static void lazy_guard(struct list_head *vmas, unsigned long va, unsigned long nr, bool on)
+{
+	struct vma_area *vma;
+	unsigned long end = va + nr * PAGE_SIZE;
+
+	list_for_each_entry(vma, vmas, list) {
+		unsigned long s, e;
+
+		if (end <= vma->e->start || va >= vma->e->end || !vma_area_is(vma, VMA_PREMMAPED))
+			continue;
+		s = max(va, (unsigned long)vma->e->start);
+		e = min(end, (unsigned long)vma->e->end);
+		if (mprotect(decode_pointer(vma->premmaped_addr + (s - vma->e->start)), e - s,
+			     on ? PROT_NONE : (vma->e->prot | PROT_WRITE)))
+			pr_perror("lazy-diag: mprotect %lx-%lx", s, e);
+	}
+}
+
+static void lazy_segv(int sig, siginfo_t *si, void *uc)
+{
+	ucontext_t *u = uc;
+	unsigned long ip = 0;
+#if defined(__x86_64__)
+	ip = u->uc_mcontext.gregs[REG_RIP];
+#elif defined(__aarch64__)
+	ip = u->uc_mcontext.pc;
+#endif
+	pr_err("lazy-diag: SIGSEGV writing %p (a lazy page in the premap?) at ip %lx\n", si->si_addr, ip);
+#ifdef __GLIBC__
+	{
+		void *bt[32];
+		int n = backtrace(bt, 32);
+
+		backtrace_symbols_fd(bt, n, log_get_fd());
+	}
+#endif
+	signal(SIGSEGV, SIG_DFL);
+}
+
 static void lazy_check_premap(struct list_head *vmas, struct lazy_range *r, unsigned long n)
 {
 	unsigned char vec[1024];
@@ -1313,6 +1362,13 @@ static int restore_priv_vma_content(struct pstree_item *t, struct page_read *pr)
 	struct lazy_range *lazy_ranges = NULL;
 	unsigned long nr_lazy_ranges = 0;
 
+	struct sigaction segv = { .sa_sigaction = lazy_segv, .sa_flags = SA_SIGINFO }, old_segv;
+
+	if (opts.lazy_pages)
+		sigaction(SIGSEGV, &segv, &old_segv);
+	else
+		sigaction(SIGSEGV, NULL, &old_segv);
+
 	vma = list_first_entry(vmas, struct vma_area, list);
 	rsti(t)->pages_img_id = pr->pages_img_id;
 
@@ -1336,6 +1392,7 @@ static int restore_priv_vma_content(struct pstree_item *t, struct page_read *pr)
 		if (opts.lazy_pages && pagemap_lazy(pr->pe)) {
 			pr_debug("Lazy restore skips %ld pages at %lx\n", nr_pages, va);
 			lazy_note(&lazy_ranges, &nr_lazy_ranges, va, nr_pages);
+			lazy_guard(vmas, va, nr_pages, true);
 			pr->skip_pages(pr, nr_pages * PAGE_SIZE);
 			nr_lazy += nr_pages;
 			continue;
@@ -1525,6 +1582,9 @@ err_read:
 	}
 
 	lazy_check_premap(vmas, lazy_ranges, nr_lazy_ranges);
+	for (unsigned long k = 0; k < nr_lazy_ranges; k++)
+		lazy_guard(vmas, lazy_ranges[k].va, lazy_ranges[k].nr, false);
+	sigaction(SIGSEGV, &old_segv, NULL);
 
 	cnt_add(CNT_PAGES_COMPARED, nr_compared);
 	cnt_add(CNT_PAGES_SKIPPED_COW, nr_shared);
