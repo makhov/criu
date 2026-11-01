@@ -1233,6 +1233,66 @@ static int premap_priv_vmas(struct pstree_item *t, struct vm_area_list *vmas, vo
 
 #define COW_READ_BATCH_PAGES (1UL << 8)
 
+/*
+ * gcr#60 diagnostics: the ranges a lazy restore leaves to the lazy-pages
+ * daemon, checked once the premapped area holds everything else. A lazy
+ * page resident there already (the zero page, say) is one the restored
+ * process would read without a fault reaching the daemon.
+ */
+struct lazy_range {
+	unsigned long va, nr;
+};
+
+static void lazy_note(struct lazy_range **r, unsigned long *n, unsigned long va, unsigned long nr)
+{
+	if (*n % 256 == 0) {
+		struct lazy_range *m = xrealloc(*r, (*n + 256) * sizeof(**r));
+		if (!m)
+			return;
+		*r = m;
+	}
+	(*r)[*n].va = va;
+	(*r)[*n].nr = nr;
+	(*n)++;
+}
+
+static void lazy_check_premap(struct list_head *vmas, struct lazy_range *r, unsigned long n)
+{
+	unsigned char vec[1024];
+	unsigned long resident = 0, checked = 0;
+	struct vma_area *vma;
+
+	for (unsigned long k = 0; k < n; k++) {
+		list_for_each_entry(vma, vmas, list) {
+			unsigned long va = r[k].va, end = r[k].va + r[k].nr * PAGE_SIZE;
+
+			if (end <= vma->e->start || va >= vma->e->end || !vma_area_is(vma, VMA_PREMMAPED))
+				continue;
+			va = max(va, (unsigned long)vma->e->start);
+			end = min(end, (unsigned long)vma->e->end);
+			while (va < end) {
+				unsigned long len = min(end - va, sizeof(vec) * PAGE_SIZE);
+				void *p = decode_pointer(vma->premmaped_addr + (va - vma->e->start));
+
+				if (mincore(p, len, vec)) {
+					pr_perror("lazy-diag: mincore %lx", va);
+					return;
+				}
+				for (unsigned long i = 0; i < len / PAGE_SIZE; i++) {
+					checked++;
+					if (!(vec[i] & 1))
+						continue;
+					if (resident++ < 20)
+						pr_warn("lazy-diag: lazy page %lx resident in the premap before the restorer\n",
+							va + i * PAGE_SIZE);
+				}
+				va += len;
+			}
+		}
+	}
+	pr_info("lazy-diag: %lu of %lu lazy pages resident in the premap before the restorer\n", resident, checked);
+}
+
 static int restore_priv_vma_content(struct pstree_item *t, struct page_read *pr)
 {
 	struct vma_area *vma;
@@ -1250,6 +1310,8 @@ static int restore_priv_vma_content(struct pstree_item *t, struct page_read *pr)
 	unsigned long va;
 	void *buf = NULL;
 	bool page_read_closed = false;
+	struct lazy_range *lazy_ranges = NULL;
+	unsigned long nr_lazy_ranges = 0;
 
 	vma = list_first_entry(vmas, struct vma_area, list);
 	rsti(t)->pages_img_id = pr->pages_img_id;
@@ -1273,6 +1335,7 @@ static int restore_priv_vma_content(struct pstree_item *t, struct page_read *pr)
 		 */
 		if (opts.lazy_pages && pagemap_lazy(pr->pe)) {
 			pr_debug("Lazy restore skips %ld pages at %lx\n", nr_pages, va);
+			lazy_note(&lazy_ranges, &nr_lazy_ranges, va, nr_pages);
 			pr->skip_pages(pr, nr_pages * PAGE_SIZE);
 			nr_lazy += nr_pages;
 			continue;
@@ -1461,6 +1524,8 @@ err_read:
 		}
 	}
 
+	lazy_check_premap(vmas, lazy_ranges, nr_lazy_ranges);
+
 	cnt_add(CNT_PAGES_COMPARED, nr_compared);
 	cnt_add(CNT_PAGES_SKIPPED_COW, nr_shared);
 	cnt_add(CNT_PAGES_RESTORED, nr_restored);
@@ -1483,6 +1548,7 @@ out:
 		pr->close(pr);
 	}
 	xfree(buf);
+	xfree(lazy_ranges);
 	return exit_code;
 }
 

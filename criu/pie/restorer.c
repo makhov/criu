@@ -1253,14 +1253,34 @@ static int enable_uffd(int uffd, unsigned long addr, unsigned long len)
 	return 0;
 }
 
+/* gcr#60 diagnostics: how many pages of [addr, addr+len) are resident. */
+static long resident_pages(unsigned long addr, unsigned long len)
+{
+	unsigned char vec[512];
+	long n = 0;
+
+	for (unsigned long off = 0; off < len; off += sizeof(vec) * PAGE_SIZE) {
+		unsigned long chunk = min(len - off, sizeof(vec) * PAGE_SIZE);
+
+		if (sys_mincore((void *)(addr + off), chunk, vec))
+			return -1;
+		for (unsigned long i = 0; i < chunk / PAGE_SIZE; i++)
+			n += vec[i] & 1;
+	}
+	return n;
+}
+
 static int vma_remap(VmaEntry *vma_entry, int uffd)
 {
 	unsigned long src = vma_premmaped_start(vma_entry);
 	unsigned long dst = vma_entry->start;
 	unsigned long len = vma_entry_len(vma_entry);
 	unsigned long guard = 0, tmp;
+	long before = -2;
 
 	pr_info("Remap %lx->%lx len %lx\n", src, dst, len);
+	if (uffd != -1 && vma_entry_can_be_lazy(vma_entry))
+		before = resident_pages(src, len);
 
 	/*
 	 * SHSTK VMAs are a bit special, in fact we create shstk vma right in the
@@ -1351,9 +1371,13 @@ static int vma_remap(VmaEntry *vma_entry, int uffd)
 	 * pages, so that the processes will hang until the memory is
 	 * injected via userfaultfd.
 	 */
-	if (vma_entry_can_be_lazy(vma_entry))
+	if (vma_entry_can_be_lazy(vma_entry)) {
+		if (uffd != -1)
+			pr_info("lazy-diag: %lx-%lx: %ld pages resident before the remap, %ld after\n", dst, dst + len,
+				before, resident_pages(dst, len));
 		if (enable_uffd(uffd, dst, len) != 0)
 			return -1;
+	}
 
 	return 0;
 }
@@ -2522,6 +2546,14 @@ __visible long __export_restore_task(struct task_restore_args *args)
 	}
 
 	if (args->uffd > -1) {
+		/* gcr#60 diagnostics: what is resident once every VMA is in place. */
+		for (i = 0; i < args->vmas_n; i++) {
+			vma_entry = args->vmas + i;
+			if (vma_entry_is(vma_entry, VMA_PREMMAPED) && vma_entry_can_be_lazy(vma_entry))
+				pr_info("lazy-diag: %lx-%lx: %ld pages resident before the process runs\n",
+					(unsigned long)vma_entry->start, (unsigned long)vma_entry->end,
+					resident_pages(vma_entry->start, vma_entry_len(vma_entry)));
+		}
 		pr_debug("lazy-pages: closing uffd %d\n", args->uffd);
 		/*
 		 * All userfaultfd configuration has finished at this point.
