@@ -852,10 +852,16 @@ static int uffd_check_op_error(struct lazy_pages_info *lpi, const char *op, unsi
 
 	lp_debug(lpi, "%s: mcopy_rc:%ld, errno:%d\n", op, mcopy_rc, errno);
 
-	if (mcopy_rc <= 0)
-		*nr_pages = 0;
-	else
+	if (mcopy_rc > 0)
 		*nr_pages = mcopy_rc / PAGE_SIZE;
+	else if (mcopy_rc == -EEXIST || (mcopy_rc == 0 && errno == EEXIST))
+		/*
+		 * The first page is there already, and will stay there: count
+		 * it done, or the request comes back for it forever.
+		 */
+		*nr_pages = 1;
+	else
+		*nr_pages = 0;
 
 	return 0;
 }
@@ -872,9 +878,12 @@ static int uffd_copy(struct lazy_pages_info *lpi, __u64 address, unsigned long *
 	uffdio_copy.copy = 0;
 
 	lp_debug(lpi, "uffd_copy: 0x%llx/%ld\n", uffdio_copy.dst, len);
-	if (ioctl(lpi->lpfd.fd, UFFDIO_COPY, &uffdio_copy) &&
-	    uffd_check_op_error(lpi, "copy", nr_pages, uffdio_copy.copy))
-		return -1;
+	if (ioctl(lpi->lpfd.fd, UFFDIO_COPY, &uffdio_copy)) {
+		if (uffd_check_op_error(lpi, "copy", nr_pages, uffdio_copy.copy))
+			return -1;
+		if (uffdio_copy.copy == -EEXIST)
+			lp_warn(lpi, "lazy-diag: page %llx present before the daemon filled it\n", uffdio_copy.dst);
+	}
 
 	lpi->copied_pages += *nr_pages;
 
