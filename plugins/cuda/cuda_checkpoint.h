@@ -38,8 +38,38 @@ typedef struct {
 	unsigned long long reserved1[7];
 } CUcheckpointLockArgs;
 
+/*
+ * Custom storage (CUDA 13.4, r615+): a checkpoint maps the process's GPU
+ * memory into the caller's contexts for it to copy out, a restore maps fresh
+ * memory for it to copy in, and cuCheckpointOperationComplete() ends either.
+ * https://docs.nvidia.com/cuda/cuda-driver-api/cuda_driver_api/group__CUDA__CHECKPOINT.html
+ */
+typedef unsigned long long CUdeviceptr;
+typedef struct CUstream_st *CUstream;
+typedef struct CUctx_st *CUcontext;
+typedef int CUdevice;
+typedef struct CUIcheckpointOperation_st *CUcheckpointOperationHandle;
+
 typedef struct {
-	unsigned long long reserved[8];
+	unsigned char bytes[16];
+} CUuuid;
+
+typedef struct {
+	CUdeviceptr devPtr;
+	size_t size;
+	CUstream stream;
+} CUcheckpointCustomStoragePerDeviceData;
+
+typedef struct {
+	CUcheckpointOperationHandle handle;
+	CUcheckpointCustomStoragePerDeviceData *perDeviceData;
+	unsigned int deviceCount;
+} CUcheckpointCustomStorageInfo;
+
+typedef struct {
+	/* NULL: the GPU memory goes to the process's host memory (CUDA 13.0). */
+	CUcheckpointCustomStorageInfo **customStorageInfo_out;
+	char reserved[64 - sizeof(CUcheckpointCustomStorageInfo **)];
 } CUcheckpointCheckpointArgs;
 
 typedef struct {
@@ -50,8 +80,11 @@ typedef struct {
 typedef struct {
 	CUcheckpointGpuPair *gpuPairs;
 	unsigned int gpuPairsCount;
-	char reserved[52 - sizeof(CUcheckpointGpuPair *)];
-	unsigned long long reserved1;
+	unsigned int padding0;
+	/* NULL: the GPU memory comes from the process's host memory (CUDA 13.0). */
+	CUcheckpointCustomStorageInfo **customStorageInfo_out;
+	char reserved[64 - sizeof(CUcheckpointGpuPair *) - 2 * sizeof(unsigned int) -
+		      sizeof(CUcheckpointCustomStorageInfo **)];
 } CUcheckpointRestoreArgs;
 
 typedef struct {
@@ -83,5 +116,14 @@ _Static_assert(offsetof(CUcheckpointRestoreArgs, gpuPairs) == 0,
 	       "CUcheckpointRestoreArgs.gpuPairs has an unexpected offset");
 _Static_assert(offsetof(CUcheckpointRestoreArgs, gpuPairsCount) == sizeof(void *),
 	       "CUcheckpointRestoreArgs.gpuPairsCount has an unexpected offset");
+_Static_assert(offsetof(CUcheckpointCheckpointArgs, customStorageInfo_out) == 0,
+	       "CUcheckpointCheckpointArgs.customStorageInfo_out has an unexpected offset");
+_Static_assert(offsetof(CUcheckpointRestoreArgs, customStorageInfo_out) == 16,
+	       "CUcheckpointRestoreArgs.customStorageInfo_out has an unexpected offset");
+_Static_assert(sizeof(CUuuid) == 16, "CUuuid must be 16 bytes");
+_Static_assert(sizeof(CUcheckpointCustomStoragePerDeviceData) == 24,
+	       "CUcheckpointCustomStoragePerDeviceData must be 24 bytes");
+_Static_assert(offsetof(CUcheckpointCustomStorageInfo, deviceCount) == 16,
+	       "CUcheckpointCustomStorageInfo.deviceCount has an unexpected offset");
 
 #endif /* CUDA_CHECKPOINT_H */

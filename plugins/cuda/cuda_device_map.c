@@ -47,10 +47,6 @@ _Static_assert(offsetof(CUcheckpointGpuPair, oldUuid) == 0,
 _Static_assert(offsetof(CUcheckpointGpuPair, newUuid) == CUDA_GPU_UUID_SIZE,
 	       "CUcheckpointGpuPair.newUuid has an unexpected offset");
 
-typedef struct {
-	unsigned char bytes[CUDA_GPU_UUID_SIZE];
-} CUuuid;
-
 typedef CUresult (*cuda_init_fn)(unsigned int flags);
 typedef CUresult (*cuda_device_get_count_fn)(int *count);
 typedef CUresult (*cuda_device_get_fn)(int *device, int ordinal);

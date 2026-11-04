@@ -1,5 +1,6 @@
 #include "criu-log.h"
 #include "cuda_checkpoint.h"
+#include "cuda_custom_storage.h"
 #include "cuda_device_map.h"
 #include "cuda_plugin.h"
 #include "plugin.h"
@@ -572,12 +573,20 @@ static int checkpoint_device(void *arg)
 	 * can report the actual state while its restore thread is running.
 	 */
 	task_info->current_task_state = CUDA_TASK_CHECKPOINTED;
-	res = cuda_api.checkpoint(pid, &args);
-	if (atomic_load(&operation_aborted))
-		return -1;
-	if (res != CUDA_SUCCESS) {
-		cuda_log_error("cuCheckpointProcessCheckpoint", pid, res);
-		ret = -1;
+	if (cuda_custom_storage_enabled(cuda_handle)) {
+		/* To an image of its own, not through the task's memory. */
+		if (cuda_custom_storage_checkpoint(cuda_handle, pid))
+			ret = -1;
+		if (atomic_load(&operation_aborted))
+			return -1;
+	} else {
+		res = cuda_api.checkpoint(pid, &args);
+		if (atomic_load(&operation_aborted))
+			return -1;
+		if (res != CUDA_SUCCESS) {
+			cuda_log_error("cuCheckpointProcessCheckpoint", pid, res);
+			ret = -1;
+		}
 	}
 
 	observed_task_state = get_cuda_state(pid);
@@ -588,7 +597,7 @@ static int checkpoint_device(void *arg)
 		ret = -1;
 	}
 
-	if (res == CUDA_SUCCESS && task_info->current_task_state != CUDA_TASK_CHECKPOINTED) {
+	if (!ret && task_info->current_task_state != CUDA_TASK_CHECKPOINTED) {
 		pr_err("CUDA checkpoint succeeded for pid %d but process state is %d\n", pid,
 		       task_info->current_task_state);
 		ret = -1;
@@ -824,16 +833,29 @@ static int restore_device(void *arg)
 			args.gpuPairsCount = op->map->count;
 		}
 
-		if (cuda_driver_init()) {
+		/*
+		 * GPU memory checkpointed to custom storage comes back from it,
+		 * through a helper that initializes CUDA itself: CUDA does not
+		 * work in a child forked after cuInit(), so this process must
+		 * not call it first.
+		 */
+		bool custom = cuda_custom_storage_image(pid);
+
+		if (!custom && cuda_driver_init()) {
 			if (atomic_load(&operation_aborted))
 				return -1;
 			ret = -1;
 		} else {
-			res = cuda_api.restore(pid, &args);
+			if (custom)
+				res = cuda_custom_storage_restore(cuda_handle, pid, op->map) ? CUDA_ERROR_INVALID_VALUE :
+											     CUDA_SUCCESS;
+			else
+				res = cuda_api.restore(pid, &args);
 			if (atomic_load(&operation_aborted))
 				return -1;
 			if (res != CUDA_SUCCESS) {
-				cuda_log_error("cuCheckpointProcessRestore", pid, res);
+				if (!custom)
+					cuda_log_error("cuCheckpointProcessRestore", pid, res);
 				/* Preserve this operation failure even if cleanup below reaches
 				 * LOCKED or RUNNING successfully.
 				 */
