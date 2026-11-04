@@ -24,6 +24,7 @@
 #define CUDA_PLUGIN_BACKEND_OPTION    CUDA_PLUGIN_NAME ".backend"
 #define CUDA_PLUGIN_DEVICE_MAP_OPTION CUDA_PLUGIN_NAME ".device-map"
 #define CUDA_PLUGIN_TIMEOUT_OPTION    CUDA_PLUGIN_NAME ".timeout"
+#define CUDA_PLUGIN_STORAGE_OPTION    CUDA_PLUGIN_NAME ".storage"
 
 unsigned int cuda_plugin_timeout;
 
@@ -44,6 +45,7 @@ enum {
 	CUDA_PLUGIN_OPTION_BACKEND = 1000,
 	CUDA_PLUGIN_OPTION_DEVICE_MAP,
 	CUDA_PLUGIN_OPTION_TIMEOUT,
+	CUDA_PLUGIN_OPTION_STORAGE,
 };
 
 static bool cuda_plugin_option_matches(const char *arg, const char *name,
@@ -90,11 +92,13 @@ static int parse_cuda_plugin_options(int stage)
 		{ CUDA_PLUGIN_BACKEND_OPTION, optional_argument, NULL, CUDA_PLUGIN_OPTION_BACKEND },
 		{ CUDA_PLUGIN_DEVICE_MAP_OPTION, optional_argument, NULL, CUDA_PLUGIN_OPTION_DEVICE_MAP },
 		{ CUDA_PLUGIN_TIMEOUT_OPTION, optional_argument, NULL, CUDA_PLUGIN_OPTION_TIMEOUT },
+		{ CUDA_PLUGIN_STORAGE_OPTION, optional_argument, NULL, CUDA_PLUGIN_OPTION_STORAGE },
 		{},
 	};
 	const char *backend_value = NULL;
 	const char *device_map_value = NULL;
 	const char *timeout_value = NULL;
+	const char *storage_value = NULL;
 	char *saved_optarg;
 	char **argv = NULL;
 	int saved_optopt;
@@ -136,6 +140,10 @@ static int parse_cuda_plugin_options(int stage)
 			if (cuda_plugin_option_matches(argv[optind - 1], CUDA_PLUGIN_TIMEOUT_OPTION, optarg, &ret))
 				timeout_value = optarg;
 			break;
+		case CUDA_PLUGIN_OPTION_STORAGE:
+			if (cuda_plugin_option_matches(argv[optind - 1], CUDA_PLUGIN_STORAGE_OPTION, optarg, &ret))
+				storage_value = optarg;
+			break;
 		case '?':
 			/* Every plugin receives the same namespaced option list. */
 			break;
@@ -158,6 +166,15 @@ static int parse_cuda_plugin_options(int stage)
 		if (ret)
 			return ret;
 	}
+
+	/* auto: custom storage where the driver has it (r615+); host: the
+	 * task's memory, as before it.
+	 */
+	if (storage_value && strcmp(storage_value, "auto") && strcmp(storage_value, "host")) {
+		pr_err("Invalid %s value '%s' (expected auto or host)\n", CUDA_PLUGIN_STORAGE_OPTION, storage_value);
+		return -EINVAL;
+	}
+	cuda_plugin_host_storage = storage_value && !strcmp(storage_value, "host");
 
 	if (timeout_value) {
 		char *end;

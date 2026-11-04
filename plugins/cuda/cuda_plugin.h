@@ -10,6 +10,11 @@ struct cuda_device_map;
 /* Maximum duration of one helper invocation in seconds; zero means unlimited. */
 extern unsigned int cuda_plugin_timeout;
 
+/* cuda_plugin.storage=host: checkpoints keep GPU memory in host memory even
+ * where the driver has custom storage.
+ */
+extern bool cuda_plugin_host_storage;
+
 /* Register a CUDA task before locking it, while allocation can still fail safely. */
 int cuda_plugin_add_inventory(pid_t pid);
 
