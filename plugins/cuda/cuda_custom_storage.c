@@ -42,9 +42,11 @@
  * bf16 or fp16, which LZ4 does not shrink at all (0.999 of a bf16 model) and
  * an entropy coder does, through their high bytes, sign and exponent. A
  * chunk's high bytes, every second one, are compressed as one zstd frame and
- * its low bytes stored as they are: a bf16 model shrinks to 0.685. A chunk
- * that would not shrink by 1/32 is stored whole. Each chunk is a frame of its
- * own, so a restore decompresses them in parallel.
+ * its low bytes stored as they are: a bf16 model shrinks to 0.685. Where the
+ * high bytes nearly vanish, the low bytes are compressed too, and a chunk of
+ * zeroes, as a model server's reserved and unwritten KV cache is, is not
+ * stored at all. A chunk that would not shrink by 1/32 is stored whole. Each
+ * chunk is a frame of its own, so a restore decompresses them in parallel.
  *
  * Version 1 images (gcr.3) hold each GPU's memory whole, at its entry's
  * offset, with no index; they are still read.
@@ -76,11 +78,17 @@ struct cuda_mem_chunk {
 	uint64_t offset;
 	/* Bytes of GPU memory: CUDA_MEM_CHUNK, or less in the last chunk. */
 	uint32_t size;
-	/* 0: stored whole. Else the zstd frame of its high bytes, this many
-	 * bytes long, followed by its low bytes.
+	/*
+	 * 0: stored whole. CUDA_MEM_ZERO: all zeroes, nothing stored. Else the
+	 * zstd frame of its high bytes, packed & ~CUDA_MEM_LO bytes long, then
+	 * its low bytes: as they are, or, with CUDA_MEM_LO, as a 4-byte length
+	 * and a zstd frame of their own.
 	 */
 	uint32_t packed;
 };
+
+#define CUDA_MEM_ZERO 0xffffffffu
+#define CUDA_MEM_LO   0x80000000u
 
 struct cuda_storage_api {
 	CUresult (*init)(unsigned int flags);
@@ -97,6 +105,7 @@ struct cuda_storage_api {
 	CUresult (*mem_host_alloc)(void **ptr, size_t size, unsigned int flags);
 	CUresult (*memcpy_dtoh)(void *dst, CUdeviceptr src, size_t size, CUstream stream);
 	CUresult (*memcpy_htod)(CUdeviceptr dst, const void *src, size_t size, CUstream stream);
+	CUresult (*memset_d8)(CUdeviceptr dst, unsigned char value, size_t size, CUstream stream);
 	CUresult (*stream_synchronize)(CUstream stream);
 	CUresult (*checkpoint)(int pid, CUcheckpointCheckpointArgs *args);
 	CUresult (*restore)(int pid, CUcheckpointRestoreArgs *args);
@@ -130,6 +139,7 @@ static int load_api(void *libcuda)
 		{ "cuMemHostAlloc", (void **)&api.mem_host_alloc },
 		{ "cuMemcpyDtoHAsync_v2", (void **)&api.memcpy_dtoh },
 		{ "cuMemcpyHtoDAsync_v2", (void **)&api.memcpy_htod },
+		{ "cuMemsetD8Async", (void **)&api.memset_d8 },
 		{ "cuStreamSynchronize", (void **)&api.stream_synchronize },
 		{ "cuCheckpointProcessCheckpoint", (void **)&api.checkpoint },
 		{ "cuCheckpointProcessRestore", (void **)&api.restore },
@@ -390,7 +400,9 @@ struct writer {
 	pthread_mutex_t lock;
 	uint64_t pos;
 	uint64_t stored;
-	/* NULL: chunks are stored whole. */
+	/* Whether CRIU compresses pages: zero chunks are skipped then. */
+	bool compress;
+	/* NULL: chunks are not compressed. */
 	struct zstd_api *z;
 	struct cuda_mem_chunk *idx;
 	atomic_bool failed;
@@ -417,6 +429,13 @@ static int write_record(struct writer *w, struct cuda_mem_chunk *c, const void *
 	return 0;
 }
 
+static bool is_zero(const void *buf, size_t size)
+{
+	const unsigned char *p = buf;
+
+	return size == 0 || (p[0] == 0 && memcmp(p, p + 1, size - 1) == 0);
+}
+
 static void store_chunk(struct writer_slot *s)
 {
 	struct writer *w = s->w;
@@ -424,12 +443,31 @@ static void store_chunk(struct writer_slot *s)
 	size_t len = s->len;
 
 	c->size = len;
+	if (w->compress && is_zero(s->pinned, len)) {
+		c->packed = CUDA_MEM_ZERO;
+		return;
+	}
 	if (w->z && len % 2 == 0) {
-		size_t n;
+		size_t n, m;
 
 		split_bytes(s->pinned, len, s->hi, s->lo);
 		n = w->z->compress2(s->cctx, s->out, w->z->bound(len / 2), s->hi, len / 2);
 		if (!w->z->is_error(n) && n < len / 2 - len / 64) {
+			/* A model's mantissas fill the low bytes, which do not
+			 * compress; where the high bytes nearly vanish, they may.
+			 */
+			if (n < len / 8) {
+				m = w->z->compress2(s->cctx, s->out + n + 4, w->z->bound(len / 2), s->lo, len / 2);
+				if (!w->z->is_error(m) && m < len / 2 - len / 64) {
+					uint32_t m32 = m;
+
+					memcpy(s->out + n, &m32, sizeof(m32));
+					c->packed = n | CUDA_MEM_LO;
+					if (write_record(w, c, s->out, n + 4 + m, NULL, 0))
+						atomic_store(&w->failed, true);
+					return;
+				}
+			}
 			c->packed = n;
 			if (write_record(w, c, s->out, n, s->lo, len / 2))
 				atomic_store(&w->failed, true);
@@ -473,7 +511,8 @@ static int writer_start(struct writer *w, struct zstd_api *z, void **bufs, int n
 	pthread_mutex_init(&w->lock, NULL);
 	atomic_store(&w->failed, false);
 	w->nslots = n;
-	if (opts.compress_mode) {
+	w->compress = opts.compress_mode != 0;
+	if (w->compress) {
 		if (load_zstd(z))
 			pr_warn("No libzstd.so.1: GPU memory is stored uncompressed\n");
 		else
@@ -490,7 +529,7 @@ static int writer_start(struct writer *w, struct zstd_api *z, void **bufs, int n
 			s->cctx = w->z->create_cctx();
 			s->hi = malloc(CUDA_MEM_CHUNK / 2);
 			s->lo = malloc(CUDA_MEM_CHUNK / 2);
-			s->out = malloc(w->z->bound(CUDA_MEM_CHUNK / 2));
+			s->out = malloc(2 * w->z->bound(CUDA_MEM_CHUNK / 2) + 8);
 			if (!s->cctx || !s->hi || !s->lo || !s->out) {
 				pr_err("Unable to set up zstd for GPU memory\n");
 				return -1;
@@ -584,7 +623,7 @@ struct reader {
 struct reader_slot {
 	struct reader *r;
 	void *pinned;
-	unsigned char *packed, *hi;
+	unsigned char *packed, *hi, *lo;
 	pthread_t thread;
 };
 
@@ -604,16 +643,33 @@ static void *read_chunks(void *arg)
 	}
 	while (!atomic_load(&r->failed) && (k = atomic_fetch_add(&r->next, 1)) < r->n) {
 		const struct cuda_mem_chunk *c = &r->idx[k];
-		size_t half = c->size / 2;
+		size_t half = c->size / 2, hn = c->packed & ~CUDA_MEM_LO;
 
+		if (c->packed == CUDA_MEM_ZERO) {
+			if (api.memset_d8(r->dev + k * CUDA_MEM_CHUNK, 0, c->size, stream) != CUDA_SUCCESS ||
+			    api.stream_synchronize(stream) != CUDA_SUCCESS)
+				goto fail;
+			continue;
+		}
 		if (!c->packed) {
 			if (full_pread(r->fd, s->pinned, c->size, c->offset))
 				goto fail;
-		} else {
-			if (!r->z || full_pread(r->fd, s->packed, c->packed + half, c->offset) ||
-			    r->z->decompress(s->hi, half, s->packed, c->packed) != half)
+		} else if (!(c->packed & CUDA_MEM_LO)) {
+			if (!r->z || full_pread(r->fd, s->packed, hn + half, c->offset) ||
+			    r->z->decompress(s->hi, half, s->packed, hn) != half)
 				goto fail;
-			join_bytes(s->pinned, c->size, s->hi, s->packed + c->packed);
+			join_bytes(s->pinned, c->size, s->hi, s->packed + hn);
+		} else {
+			uint32_t m;
+
+			if (!r->z || full_pread(r->fd, s->packed, hn + 4, c->offset))
+				goto fail;
+			memcpy(&m, s->packed + hn, sizeof(m));
+			if (m >= half || full_pread(r->fd, s->packed + hn + 4, m, c->offset + hn + 4) ||
+			    r->z->decompress(s->hi, half, s->packed, hn) != half ||
+			    r->z->decompress(s->lo, half, s->packed + hn + 4, m) != half)
+				goto fail;
+			join_bytes(s->pinned, c->size, s->hi, s->lo);
 		}
 		if (api.memcpy_htod(r->dev + k * CUDA_MEM_CHUNK, s->pinned, c->size, stream) != CUDA_SUCCESS ||
 		    api.stream_synchronize(stream) != CUDA_SUCCESS)
@@ -819,9 +875,15 @@ static struct cuda_mem_chunk *read_index(int fd, uint32_t version, const struct 
 	for (k = 0; k < n; k++) {
 		uint64_t want = e->size - k * CUDA_MEM_CHUNK < CUDA_MEM_CHUNK ? e->size - k * CUDA_MEM_CHUNK : CUDA_MEM_CHUNK;
 
-		if (idx[k].size != want || (idx[k].packed && (idx[k].size % 2 || idx[k].packed >= idx[k].size / 2)))
+		uint32_t p = idx[k].packed, hn = p & ~CUDA_MEM_LO;
+
+		if (idx[k].size != want)
 			goto bad;
-		*packed |= idx[k].packed != 0;
+		if (p == CUDA_MEM_ZERO || !p)
+			continue;
+		if (idx[k].size % 2 || !hn || hn >= idx[k].size / 2)
+			goto bad;
+		*packed = true;
 	}
 	return idx;
 bad:
@@ -884,9 +946,10 @@ static int restore_helper(pid_t pid, const char *name, const struct cuda_device_
 	for (i = 0; i < (unsigned int)nslots; i++) {
 		slots[i].pinned = bufs[i];
 		if (packed) {
-			slots[i].packed = malloc(CUDA_MEM_CHUNK);
+			slots[i].packed = malloc(CUDA_MEM_CHUNK + 8);
 			slots[i].hi = malloc(CUDA_MEM_CHUNK / 2);
-			if (!slots[i].packed || !slots[i].hi)
+			slots[i].lo = malloc(CUDA_MEM_CHUNK / 2);
+			if (!slots[i].packed || !slots[i].hi || !slots[i].lo)
 				goto out;
 		}
 	}
@@ -940,6 +1003,7 @@ out:
 	for (i = 0; i < CUDA_MEM_THREADS; i++) {
 		free(slots[i].packed);
 		free(slots[i].hi);
+		free(slots[i].lo);
 	}
 	if (indexes)
 		for (i = 0; i < hdr.count; i++)
