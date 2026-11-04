@@ -1,6 +1,8 @@
 #ifndef CUDA_PLUGIN_H
 #define CUDA_PLUGIN_H
 
+#include <sys/types.h>
+
 #include <stdbool.h>
 
 struct cuda_device_map;
@@ -9,7 +11,7 @@ struct cuda_device_map;
 extern unsigned int cuda_plugin_timeout;
 
 /* Register a CUDA task before locking it, while allocation can still fail safely. */
-int cuda_plugin_add_inventory(void);
+int cuda_plugin_add_inventory(pid_t pid);
 
 struct cuda_plugin_backend {
 	const char *name;
