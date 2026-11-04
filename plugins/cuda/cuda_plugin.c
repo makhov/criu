@@ -257,7 +257,8 @@ static int select_cuda_backend(void)
 	return -ENOTSUP;
 }
 
-int cuda_plugin_add_inventory(void)
+/* pid is the first CUDA task: the GPUs saved are those it sees. */
+int cuda_plugin_add_inventory(pid_t pid)
 {
 	if (cuda_tasks_handled)
 		return 0;
@@ -271,7 +272,7 @@ int cuda_plugin_add_inventory(void)
 	/* Enumerate GPUs before the first lock. At DUMP_DEVICES_LATE the time
 	 * spent initializing CUDA would extend the freeze.
 	 */
-	return cuda_gpu_inventory_dump();
+	return cuda_gpu_inventory_dump(pid);
 }
 
 static int cuda_plugin_pause_devices(int pid)

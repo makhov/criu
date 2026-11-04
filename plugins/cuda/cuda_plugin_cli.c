@@ -627,7 +627,7 @@ static int cuda_cli_pause_devices(int pid)
 		return -1;
 	}
 
-	if (cuda_plugin_add_inventory())
+	if (cuda_plugin_add_inventory(pid))
 		return -1;
 
 	if (task_state == CUDA_TASK_LOCKED) {

@@ -15,6 +15,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -22,6 +23,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -308,13 +311,83 @@ static int cuda_gpu_list_init(struct cuda_gpu_list *list, unsigned int count)
 	return 0;
 }
 
-/* Only the short-lived enumeration child may initialize CUDA. */
-static int cuda_collect_gpus(struct cuda_gpu_list *list)
+/*
+ * Narrow CUDA to the GPUs pid can open: those whose /dev/nvidia<minor> is in
+ * its root, in PCI order, which is how CUDA numbers identical GPUs. In a
+ * container that is the view the restore has, inside the restored container;
+ * enumerated from CRIU's own, a dump on a node with several GPUs would save
+ * all of them, and an automatic map would need as many at the destination
+ * and pair the container's GPU with the node's first. (Enumerating in the
+ * task's mount namespace instead fails: its /proc has no /proc/self for us.)
+ */
+static int cuda_restrict_to_task_gpus(pid_t pid)
+{
+	char visible[CUDA_GPU_INVENTORY_MAX_GPUS * 48] = "";
+	struct dirent **gpus;
+	int found = 0;
+	int n, i;
+
+	n = scandir("/proc/driver/nvidia/gpus", &gpus, NULL, alphasort);
+	if (n < 0) {
+		pr_perror("Unable to list the NVIDIA GPUs");
+		return -errno;
+	}
+	for (i = 0; i < n; i++) {
+		char path[PATH_MAX], line[256], uuid[64] = "";
+		int dev_minor = -1;
+		struct stat st;
+		FILE *f;
+
+		if (gpus[i]->d_name[0] == '.')
+			goto next;
+		snprintf(path, sizeof(path), "/proc/driver/nvidia/gpus/%s/information", gpus[i]->d_name);
+		f = fopen(path, "re");
+		if (!f)
+			goto next;
+		while (fgets(line, sizeof(line), f)) {
+			sscanf(line, "GPU UUID: %63s", uuid);
+			sscanf(line, "Device Minor: %d", &dev_minor);
+		}
+		fclose(f);
+		if (dev_minor < 0 || !uuid[0])
+			goto next;
+		snprintf(path, sizeof(path), "/proc/%d/root/dev/nvidia%d", pid, dev_minor);
+		if (stat(path, &st) || !S_ISCHR(st.st_mode) || minor(st.st_rdev) != (unsigned int)dev_minor)
+			goto next;
+		if (found++)
+			strncat(visible, ",", sizeof(visible) - strlen(visible) - 1);
+		strncat(visible, uuid, sizeof(visible) - strlen(visible) - 1);
+next:
+		free(gpus[i]);
+	}
+	free(gpus);
+
+	if (!found) {
+		pr_err("pid %d has no NVIDIA GPU device in its root\n", pid);
+		return -ENODEV;
+	}
+	pr_info("CUDA GPUs of pid %d: %s\n", pid, visible);
+	if (setenv("CUDA_VISIBLE_DEVICES", visible, 1))
+		return -errno;
+	return 0;
+}
+
+/*
+ * Only the short-lived enumeration child may initialize CUDA. With pid set,
+ * only the GPUs that task can open are enumerated.
+ */
+static int cuda_collect_gpus(struct cuda_gpu_list *list, pid_t pid)
 {
 	struct cuda_device_api api = {};
 	int device_count;
 	int ret;
 	int i;
+
+	if (pid > 0) {
+		ret = cuda_restrict_to_task_gpus(pid);
+		if (ret)
+			return ret;
+	}
 
 	ret = cuda_device_api_init(&api);
 	if (ret)
@@ -358,7 +431,7 @@ out:
 	return ret;
 }
 
-static int cuda_enumerate_gpus(struct cuda_gpu_list *list)
+static int cuda_enumerate_gpus(struct cuda_gpu_list *list, pid_t pid)
 {
 	struct {
 		int error;
@@ -400,7 +473,7 @@ static int cuda_enumerate_gpus(struct cuda_gpu_list *list)
 	child = fork();
 	if (child == 0) {
 		close(pipefd[0]);
-		reply.error = cuda_collect_gpus(list);
+		reply.error = cuda_collect_gpus(list, pid);
 		if (reply.error)
 			pr_err("Unable to collect CUDA GPU inventory: %s (%d)\n",
 			       strerror(-reply.error), reply.error);
@@ -542,13 +615,13 @@ static int cuda_write_inventory(const CudaGpuInventory *inventory)
 	return ret;
 }
 
-int cuda_gpu_inventory_dump(void)
+int cuda_gpu_inventory_dump(pid_t pid)
 {
 	struct cuda_gpu_list list = {};
 	int ret;
 
 	/* The inventory is needed only for ordinal and automatic device maps. */
-	ret = cuda_enumerate_gpus(&list);
+	ret = cuda_enumerate_gpus(&list, pid);
 	if (ret) {
 		pr_warn("Unable to save the CUDA GPU inventory (%d); restore will accept only UUID device maps\n",
 			ret);
@@ -1014,7 +1087,7 @@ static int cuda_build_automatic_map(struct cuda_device_map *map)
 
 	source_count = cuda_saved_inventory->n_gpus;
 
-	ret = cuda_enumerate_gpus(&destination);
+	ret = cuda_enumerate_gpus(&destination, 0);
 	if (ret)
 		return ret;
 	if (destination.inventory.n_gpus < source_count) {
@@ -1148,7 +1221,7 @@ int cuda_device_map_resolve(const char *value, struct cuda_device_map *map)
 		}
 
 		if (!destination_ready) {
-			ret = cuda_enumerate_gpus(&destination);
+			ret = cuda_enumerate_gpus(&destination, 0);
 			if (ret)
 				goto out;
 			destination_ready = true;
