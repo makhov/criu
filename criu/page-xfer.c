@@ -2380,6 +2380,13 @@ int disconnect_from_page_server(void)
 	if (send_psi(page_server_sk, &pi))
 		goto out;
 
+	/*
+	 * The socket is corked: the command would sit in it until the
+	 * kernel's cork timer (200 ms) sends it, while the dump waits for
+	 * the answer, which it does with its tasks frozen.
+	 */
+	tcp_cork(page_server_sk, false);
+
 	if (recv_full(page_server_sk, &status, sizeof(status), "page-server final status")) {
 		goto out;
 	}
