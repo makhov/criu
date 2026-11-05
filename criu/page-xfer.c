@@ -980,6 +980,8 @@ static int get_hole_flags(struct page_pipe *pp, int n)
 
 	if (hole_flags == PP_HOLE_PARENT)
 		return PE_PARENT;
+	else if (hole_flags == (PP_HOLE_PARENT | PP_HOLE_LAZY))
+		return PE_PARENT | PE_LAZY;
 	else
 		BUG();
 
@@ -2168,7 +2170,8 @@ static int fill_page_pipe(struct page_read *pr, struct page_pipe *pp)
 
 		for (i = 0; i < pr->pe->nr_pages; i++, vaddr += PAGE_SIZE) {
 			if (pagemap_in_parent(pr->pe))
-				ret = page_pipe_add_hole(pp, vaddr, PP_HOLE_PARENT);
+				ret = page_pipe_add_hole(pp, vaddr,
+							 PP_HOLE_PARENT | (pagemap_lazy(pr->pe) ? PP_HOLE_LAZY : 0));
 			else
 				ret = page_pipe_add_page(pp, vaddr, pagemap_lazy(pr->pe) ? PPB_LAZY : 0);
 			if (ret) {

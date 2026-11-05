@@ -113,6 +113,8 @@ struct page_pipe_buf {
 #define PP_PIPE_TYPES 4
 
 #define PP_HOLE_PARENT (1 << 0)
+/* In the parent, and a lazy restore leaves it to the lazy-pages daemon */
+#define PP_HOLE_LAZY (1 << 1)
 
 struct page_pipe {
 	unsigned int nr_pipes;			   /* how many page_pipe_bufs in there */

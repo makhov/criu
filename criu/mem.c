@@ -286,7 +286,13 @@ static int generate_iovs(struct pstree_item *item, struct vma_area *vma, struct 
 		 */
 		if (has_parent && !self_contained &&
 		    page_in_parent(page_info.softdirty)) {
-			ret = page_pipe_add_hole(pp, vaddr, PP_HOLE_PARENT);
+			/*
+			 * A page in the parent can wait for the lazy-pages daemon
+			 * as a page in this image can: otherwise a lazy restore
+			 * after pre-copy loads every page the rounds moved.
+			 */
+			ret = page_pipe_add_hole(pp, vaddr,
+						 PP_HOLE_PARENT | (ppb_flags & PPB_LAZY && opts.lazy_pages ? PP_HOLE_LAZY : 0));
 			st = 0;
 		} else {
 			ret = page_pipe_add_page(pp, vaddr, ppb_flags);
