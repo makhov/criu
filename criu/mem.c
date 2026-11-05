@@ -1233,6 +1233,29 @@ static int premap_priv_vmas(struct pstree_item *t, struct vm_area_list *vmas, vo
 
 #define COW_READ_BATCH_PAGES (1UL << 8)
 
+/*
+ * The restorer checks the pages left to the lazy-pages daemon once it
+ * has registered them with the userfaultfd (drop_stray_lazy_pages()).
+ */
+static int add_lazy_iov(struct pstree_item *t, unsigned long va, unsigned long len)
+{
+	struct rst_info *ri = rsti(t);
+	struct iovec *last = ri->lazy_iovs_n ? &ri->lazy_iovs[ri->lazy_iovs_n - 1] : NULL;
+
+	if (last && (unsigned long)last->iov_base + last->iov_len == va) {
+		last->iov_len += len;
+		return 0;
+	}
+
+	if (xrealloc_safe(&ri->lazy_iovs, (ri->lazy_iovs_n + 1) * sizeof(*ri->lazy_iovs)))
+		return -1;
+
+	ri->lazy_iovs[ri->lazy_iovs_n].iov_base = (void *)va;
+	ri->lazy_iovs[ri->lazy_iovs_n].iov_len = len;
+	ri->lazy_iovs_n++;
+	return 0;
+}
+
 static int restore_priv_vma_content(struct pstree_item *t, struct page_read *pr)
 {
 	struct vma_area *vma;
@@ -1275,6 +1298,10 @@ static int restore_priv_vma_content(struct pstree_item *t, struct page_read *pr)
 			pr_debug("Lazy restore skips %ld pages at %lx\n", nr_pages, va);
 			pr->skip_pages(pr, nr_pages * PAGE_SIZE);
 			nr_lazy += nr_pages;
+			if (add_lazy_iov(t, va, nr_pages * PAGE_SIZE)) {
+				ret = -1;
+				goto err_read;
+			}
 			continue;
 		}
 
@@ -1730,6 +1757,16 @@ int prepare_vmas(struct pstree_item *t, struct task_restore_args *ta)
 
 		if (vma_area_is(vma, VMA_PREMMAPED))
 			vma_premmaped_start(vme) = vma->premmaped_addr;
+	}
+
+	ta->lazy_iovs = (struct iovec *)rst_mem_align_cpos(RM_PRIVATE);
+	ta->lazy_iovs_n = rsti(t)->lazy_iovs_n;
+	if (ta->lazy_iovs_n) {
+		struct iovec *iovs = rst_mem_alloc(ta->lazy_iovs_n * sizeof(*iovs), RM_PRIVATE);
+
+		if (!iovs)
+			return -1;
+		memcpy(iovs, rsti(t)->lazy_iovs, ta->lazy_iovs_n * sizeof(*iovs));
 	}
 
 	return prepare_vma_ios(t, ta);

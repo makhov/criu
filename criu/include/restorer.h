@@ -177,6 +177,9 @@ struct task_restore_args {
 	VmaEntry *vmas;
 	unsigned int vmas_n;
 
+	struct iovec *lazy_iovs;
+	unsigned int lazy_iovs_n;
+
 	int vma_ios_fd;
 	struct restore_vma_io *vma_ios;
 	unsigned int vma_ios_n;

@@ -59,6 +59,10 @@ struct rst_info {
 	struct list_head vma_io;
 	unsigned int pages_img_id;
 
+	/* Pages left to the lazy-pages daemon, at their addresses */
+	struct iovec *lazy_iovs;
+	unsigned int lazy_iovs_n;
+
 	u32 cg_set;
 
 	union {
