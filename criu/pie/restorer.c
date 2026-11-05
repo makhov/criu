@@ -1253,6 +1253,109 @@ static int enable_uffd(int uffd, unsigned long addr, unsigned long len)
 	return 0;
 }
 
+/*
+ * A lazy page stays missing until the lazy-pages daemon fills it. Until
+ * its VMA is registered with the userfaultfd, though, a read of the
+ * task's memory from outside (/proc/<pid>/mem, as a scanner does) maps
+ * the zero page in: the daemon then finds the page there, can't copy
+ * it, and the task runs on zeros. Once registered, such a read waits for
+ * the daemon instead. So after registering, drop the lazy pages mapped
+ * already, and look again until there are none: a page dropped is
+ * missing again only once it's registered again.
+ *
+ * The daemon's own copies, made for reads that waited for it, are
+ * anonymous pages mapped exclusively; a zero page isn't exclusive, a
+ * huge zero page shows as a file page. The daemon doesn't copy unasked
+ * until the restore is done.
+ */
+#define PME_PRESENT   (1ULL << 63)
+#define PME_FILE      (1ULL << 61)
+#define PME_EXCLUSIVE (1ULL << 56)
+
+static int drop_stray_lazy_page(int uffd, unsigned long addr)
+{
+	struct uffdio_range range = { .start = addr, .len = PAGE_SIZE };
+	long ret;
+
+	ret = sys_ioctl(uffd, UFFDIO_UNREGISTER, (unsigned long)&range);
+	if (ret) {
+		pr_err("lazy-pages: unregister %lx failed: %ld\n", addr, ret);
+		return -1;
+	}
+
+	ret = sys_madvise(addr, PAGE_SIZE, MADV_DONTNEED);
+	if (ret) {
+		pr_err("lazy-pages: dropping %lx failed: %ld\n", addr, ret);
+		return -1;
+	}
+
+	return enable_uffd(uffd, addr, PAGE_SIZE);
+}
+
+static int drop_stray_lazy_pages(struct task_restore_args *args)
+{
+	unsigned long dropped = 0, found;
+	u64 pme[64];
+	int fd, i, round;
+
+	if (args->uffd < 0 || !args->lazy_iovs_n)
+		return 0;
+
+	fd = sys_openat(args->proc_fd, "self/pagemap", O_RDONLY, 0);
+	if (fd < 0) {
+		pr_warn("lazy-pages: can't open pagemap (%d): pages mapped before their lazy restore stay\n", fd);
+		return 0;
+	}
+
+	for (round = 0;; round++) {
+		found = 0;
+		for (i = 0; i < args->lazy_iovs_n; i++) {
+			unsigned long addr = (unsigned long)args->lazy_iovs[i].iov_base;
+			unsigned long end = addr + args->lazy_iovs[i].iov_len;
+
+			while (addr < end) {
+				unsigned long n = min_t(unsigned long, (end - addr) / PAGE_SIZE, ARRAY_SIZE(pme)), j;
+				struct iovec iov = { .iov_base = pme, .iov_len = n * sizeof(pme[0]) };
+				long ret;
+
+				ret = sys_preadv(fd, &iov, 1, addr / PAGE_SIZE * sizeof(pme[0]));
+				if (ret != iov.iov_len) {
+					pr_err("lazy-pages: can't read pagemap at %lx: %ld\n", addr, ret);
+					goto err;
+				}
+
+				for (j = 0; j < n; j++) {
+					if (!(pme[j] & PME_PRESENT) ||
+					    (pme[j] & (PME_FILE | PME_EXCLUSIVE)) == PME_EXCLUSIVE)
+						continue;
+					pr_warn("lazy-pages: %lx was mapped before its lazy restore (%llx)\n", addr + j * PAGE_SIZE,
+						(unsigned long long)pme[j]);
+					if (drop_stray_lazy_page(args->uffd, addr + j * PAGE_SIZE))
+						goto err;
+					found++;
+				}
+				addr += n * PAGE_SIZE;
+			}
+		}
+
+		dropped += found;
+		if (!found)
+			break;
+		if (round == 100) {
+			pr_err("lazy-pages: lazy pages keep being mapped from outside\n");
+			goto err;
+		}
+	}
+
+	if (dropped)
+		pr_warn("lazy-pages: dropped %lu pages mapped before their lazy restore\n", dropped);
+	sys_close(fd);
+	return 0;
+err:
+	sys_close(fd);
+	return -1;
+}
+
 static int vma_remap(VmaEntry *vma_entry, int uffd)
 {
 	unsigned long src = vma_premmaped_start(vma_entry);
@@ -2520,6 +2623,9 @@ __visible long __export_restore_task(struct task_restore_args *args)
 		pr_err("Cannot restore THP_DISABLE=%d flag: %ld\n", args->thp_disabled, ret);
 		goto core_restore_end;
 	}
+
+	if (drop_stray_lazy_pages(args))
+		goto core_restore_end;
 
 	if (args->uffd > -1) {
 		pr_debug("lazy-pages: closing uffd %d\n", args->uffd);
